@@ -399,8 +399,23 @@ function showShortcutHint(text, direction) {
     }, 2000);
 }
 
+// 规范化播放地址：资源站 vod_play_url 多为播放页(/play/xxx)，
+// 真实 m3u8 = 播放页 URL + '/index.m3u8'（实测金鹰/光速同规则，m3u8/ts/key 均 CORS 全开）
+// 已是媒体扩展名（m3u8/mp4 等）的直接返回
+function normalizePlayUrl(url) {
+    if (!url) return url;
+    const u = String(url).trim();
+    if (/\.(m3u8|mp4|webm|flv|m4v|m4s)([?#]|$)/i.test(u)) return u;
+    if (/\/play\/[^?#]*\/?$/i.test(u)) {
+        return u.replace(/\/?$/, '/') + 'index.m3u8';
+    }
+    return u;
+}
+
 // 初始化播放器
 function initPlayer(videoUrl) {
+    // 播放页地址 → 真实 m3u8（历史记录保存的是原始播放页 URL，进入时再规范化）
+    videoUrl = normalizePlayUrl(videoUrl);
     if (!videoUrl) {
         return
     }
