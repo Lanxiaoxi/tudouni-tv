@@ -85,7 +85,7 @@ function initAPICheckboxes() {
     // 添加普通API组标题
     const normaldiv = document.createElement('div');
     normaldiv.id = 'normaldiv';
-    normaldiv.className = 'grid grid-cols-2 gap-2';
+    normaldiv.className = 'api-check-grid';
     const normalTitle = document.createElement('div');
     normalTitle.className = 'api-group-title';
     normalTitle.textContent = '普通资源';
@@ -99,13 +99,12 @@ function initAPICheckboxes() {
         const checked = selectedAPIs.includes(apiKey);
 
         const checkbox = document.createElement('div');
-        checkbox.className = 'flex items-center';
+        checkbox.className = 'api-check-item';
         checkbox.innerHTML = `
             <input type="checkbox" id="api_${apiKey}" 
-                   class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333]" 
                    ${checked ? 'checked' : ''} 
                    data-api="${apiKey}">
-            <label for="api_${apiKey}" class="ml-1 text-xs text-gray-400 truncate">${api.name}</label>
+            <label for="api_${apiKey}" ${api.adult ? 'class="adult"' : ''}>${api.name}</label>
         `;
         normaldiv.appendChild(checkbox);
 
@@ -598,6 +597,9 @@ function resetSearchArea() {
         footer.style.position = '';
     }
 
+    // 切回首页视图
+    if (window.switchView) window.switchView('home');
+
     // 如果有豆瓣功能，检查是否需要显示豆瓣推荐区域
     if (typeof updateDoubanVisibility === 'function') {
         updateDoubanVisibility();
@@ -699,6 +701,8 @@ async function search() {
         document.getElementById('searchArea').classList.remove('flex-1');
         document.getElementById('searchArea').classList.add('mb-8');
         document.getElementById('resultsArea').classList.remove('hidden');
+        // 切换到搜索结果视图
+        if (window.switchView) window.switchView('search');
 
         // 隐藏豆瓣推荐区域（如果存在）
         const doubanArea = document.getElementById('doubanArea');
@@ -711,13 +715,10 @@ async function search() {
         // 如果没有结果
         if (!allResults || allResults.length === 0) {
             resultsDiv.innerHTML = `
-                <div class="col-span-full text-center py-16">
-                    <svg class="mx-auto h-12 w-12 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <h3 class="mt-2 text-lg font-medium text-gray-400">没有找到匹配的结果</h3>
-                    <p class="mt-1 text-sm text-gray-500">请尝试其他关键词或更换数据源</p>
+                <div class="search-empty" style="grid-column:1/-1">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                    <h3>没有找到匹配的结果</h3>
+                    <p>请尝试其他关键词或更换数据源</p>
                 </div>
             `;
             hideLoading();
@@ -752,70 +753,54 @@ async function search() {
         }
 
         // 添加XSS保护，使用textContent和属性转义
-        const safeResults = allResults.map(item => {
+        // 渲染为设计稿风格的竖版海报卡片
+        const safeResults = allResults.map((item, index) => {
             const safeId = item.vod_id ? item.vod_id.toString().replace(/[^\w-]/g, '') : '';
             const safeName = (item.vod_name || '').toString()
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;');
-            const sourceInfo = item.source_name ?
-                `<span class="bg-[#222] text-xs px-1.5 py-0.5 rounded-full">${item.source_name}</span>` : '';
             const sourceCode = item.source_code || '';
 
             // 添加API URL属性，用于详情获取
             const apiUrlAttr = item.api_url ?
                 `data-api-url="${item.api_url.replace(/"/g, '&quot;')}"` : '';
 
-            // 修改为水平卡片布局，图片在左侧，文本在右侧，并优化样式
+            const score = item.vod_score ? String(item.vod_score).replace(/</g, '&lt;') : '';
+            const year = item.vod_year ? String(item.vod_year).replace(/</g, '&lt;') : '';
+            const typeName = item.type_name ? String(item.type_name).replace(/</g, '&lt;') : '';
+            const remarks = item.vod_remarks ? String(item.vod_remarks).replace(/</g, '&lt;') : '';
+            const sourceName = item.source_name ? String(item.source_name).replace(/</g, '&lt;').replace(/"/g, '&quot;') : '';
             const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
+            const coverUrl = hasCover ? item.vod_pic.replace(/"/g, '&quot;') : '';
+
+            // 渐变占位艺术（无封面时兜底）
+            const pal = [['#1a2a6c','#2c3e50'],['#134e5e','#4e4376'],['#232526','#414345'],['#0f2027','#2c5364'],
+                        ['#42275a','#734b6d'],['#2b1055','#7597de'],['#355c7d','#6c5b7b'],['#3e5151','#decba4']];
+            const c = pal[index % pal.length];
+            const gid = 'resArt' + (safeId || index);
+            const artSvg = `<svg class="art" viewBox="0 0 80 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="${c[0]}"/><stop offset="1" stop-color="${c[1]}"/>
+                </linearGradient></defs>
+                <rect width="80" height="120" fill="url(#${gid})"/>
+                <circle cx="80" cy="0" r="36" fill="#ffb020" opacity=".08"/>
+                <text x="40" y="68" font-family="'Noto Sans SC','Microsoft YaHei',sans-serif" font-size="36" fill="rgba(255,255,255,.6)" text-anchor="middle" font-weight="700">${safeName.charAt(0) || '影'}</text>
+            </svg>`;
 
             return `
-                <div class="card-hover bg-[#111] rounded-lg overflow-hidden cursor-pointer transition-all hover:scale-[1.02] h-full shadow-sm hover:shadow-md" 
-                     onclick="showDetails('${safeId}','${safeName}','${sourceCode}')" ${apiUrlAttr}>
-                    <div class="flex h-full">
-                        ${hasCover ? `
-                        <div class="relative flex-shrink-0 search-card-img-container">
-                            <img src="${item.vod_pic}" alt="${safeName}" 
-                                 class="h-full w-full object-cover transition-transform hover:scale-110" 
-                                 onerror="this.onerror=null; this.src='https://via.placeholder.com/300x450?text=无封面'; this.classList.add('object-contain');" 
-                                 loading="lazy">
-                            <div class="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent"></div>
-                        </div>` : ''}
-                        
-                        <div class="p-2 flex flex-col flex-grow">
-                            <div class="flex-grow">
-                                <h3 class="font-semibold mb-2 break-words line-clamp-2 ${hasCover ? '' : 'text-center'}" title="${safeName}">${safeName}</h3>
-                                
-                                <div class="flex flex-wrap ${hasCover ? '' : 'justify-center'} gap-1 mb-2">
-                                    ${(item.type_name || '').toString().replace(/</g, '&lt;') ?
-                    `<span class="text-xs py-0.5 px-1.5 rounded bg-opacity-20 bg-blue-500 text-blue-300">
-                                          ${(item.type_name || '').toString().replace(/</g, '&lt;')}
-                                      </span>` : ''}
-                                    ${(item.vod_year || '') ?
-                    `<span class="text-xs py-0.5 px-1.5 rounded bg-opacity-20 bg-purple-500 text-purple-300">
-                                          ${item.vod_year}
-                                      </span>` : ''}
-                                </div>
-                                <p class="text-gray-400 line-clamp-2 overflow-hidden ${hasCover ? '' : 'text-center'} mb-2">
-                                    ${(item.vod_remarks || '暂无介绍').toString().replace(/</g, '&lt;')}
-                                </p>
-                            </div>
-                            
-                            <div class="flex justify-between items-center mt-1 pt-1 border-t border-gray-800">
-                                ${sourceInfo ? `<div>${sourceInfo}</div>` : '<div></div>'}
-                                <!-- 接口名称过长会被挤变形
-                                <div>
-                                    <span class="text-gray-500 flex items-center hover:text-blue-400 transition-colors">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                        </svg>
-                                        播放
-                                    </span>
-                                </div>
-                                -->
-                            </div>
-                        </div>
+                <div class="poster-card" onclick="showDetails('${safeId}','${safeName}','${sourceCode}')" ${apiUrlAttr} role="button" tabindex="0"
+                     onkeydown="if(event.key==='Enter'){showDetails('${safeId}','${safeName}','${sourceCode}')}">
+                    <div class="poster">
+                        ${artSvg}
+                        ${hasCover ? `<img class="cover" src="${coverUrl}" alt="${safeName}" loading="lazy" onerror="this.style.display='none'">` : ''}
+                        ${sourceName ? `<span class="src-tag">${sourceName}</span>` : ''}
+                        ${score ? `<span class="score"><svg viewBox="0 0 24 24"><path d="m12 2 2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.2 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>${score}</span>` : ''}
+                        ${remarks ? `<span class="ep">${remarks}</span>` : ''}
+                        <div class="play-hint"><div class="ring"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l11-6.86a1 1 0 0 0 0-1.7l-11-6.86A1 1 0 0 0 8 5.14z"/></svg></div></div>
                     </div>
+                    <div class="p-name" title="${safeName}">${safeName}</div>
+                    <div class="p-sub"><span>${year || '未知年份'}</span>${typeName ? `<span>·</span><span>${typeName}</span>` : ''}</div>
                 </div>
             `;
         }).join('');
@@ -929,14 +914,14 @@ async function showDetails(id, vod_name, sourceCode) {
 
         // 显示来源信息
         const sourceName = data.videoInfo && data.videoInfo.source_name ?
-            ` <span class="text-sm font-normal text-gray-400">(${data.videoInfo.source_name})</span>` : '';
+            `<span class="src-sub">${data.videoInfo.source_name}</span>` : '';
 
         // 不对标题进行截断处理，允许完整显示
         modalTitle.innerHTML = `<span class="break-words">${vod_name || '未知视频'}</span>${sourceName}`;
         currentVideoTitle = vod_name || '未知视频';
 
         if (data.episodes && data.episodes.length > 0) {
-            // 构建详情信息HTML
+            // 构建详情信息HTML（设计稿风格）
             let detailInfoHtml = '';
             if (data.videoInfo) {
                 // Prepare description text, strip HTML and trim whitespace
@@ -947,19 +932,19 @@ async function showDetails(id, vod_name, sourceCode) {
 
                 if (hasGridContent || descriptionText) { // Only build if there's something to show
                     detailInfoHtml = `
-                <div class="modal-detail-info">
+                <div class="detail-info">
                     ${hasGridContent ? `
                     <div class="detail-grid">
-                        ${data.videoInfo.type ? `<div class="detail-item"><span class="detail-label">类型:</span> <span class="detail-value">${data.videoInfo.type}</span></div>` : ''}
-                        ${data.videoInfo.year ? `<div class="detail-item"><span class="detail-label">年份:</span> <span class="detail-value">${data.videoInfo.year}</span></div>` : ''}
-                        ${data.videoInfo.area ? `<div class="detail-item"><span class="detail-label">地区:</span> <span class="detail-value">${data.videoInfo.area}</span></div>` : ''}
-                        ${data.videoInfo.director ? `<div class="detail-item"><span class="detail-label">导演:</span> <span class="detail-value">${data.videoInfo.director}</span></div>` : ''}
-                        ${data.videoInfo.actor ? `<div class="detail-item"><span class="detail-label">主演:</span> <span class="detail-value">${data.videoInfo.actor}</span></div>` : ''}
-                        ${data.videoInfo.remarks ? `<div class="detail-item"><span class="detail-label">备注:</span> <span class="detail-value">${data.videoInfo.remarks}</span></div>` : ''}
+                        ${data.videoInfo.type ? `<div class="detail-item"><span class="detail-label">类型：</span> <span class="detail-value">${data.videoInfo.type}</span></div>` : ''}
+                        ${data.videoInfo.year ? `<div class="detail-item"><span class="detail-label">年份：</span> <span class="detail-value">${data.videoInfo.year}</span></div>` : ''}
+                        ${data.videoInfo.area ? `<div class="detail-item"><span class="detail-label">地区：</span> <span class="detail-value">${data.videoInfo.area}</span></div>` : ''}
+                        ${data.videoInfo.director ? `<div class="detail-item"><span class="detail-label">导演：</span> <span class="detail-value">${data.videoInfo.director}</span></div>` : ''}
+                        ${data.videoInfo.actor ? `<div class="detail-item"><span class="detail-label">主演：</span> <span class="detail-value">${data.videoInfo.actor}</span></div>` : ''}
+                        ${data.videoInfo.remarks ? `<div class="detail-item"><span class="detail-label">备注：</span> <span class="detail-value">${data.videoInfo.remarks}</span></div>` : ''}
                     </div>` : ''}
                     ${descriptionText ? `
                     <div class="detail-desc">
-                        <p class="detail-label">简介:</p>
+                        <p class="detail-label">简介</p>
                         <p class="detail-desc-content">${descriptionText}</p>
                     </div>` : ''}
                 </div>
@@ -972,30 +957,31 @@ async function showDetails(id, vod_name, sourceCode) {
 
             modalContent.innerHTML = `
                 ${detailInfoHtml}
-                <div class="flex flex-wrap items-center justify-between mb-4 gap-2">
-                    <div class="flex items-center gap-2">
-                        <button onclick="toggleEpisodeOrder('${sourceCode}', '${id}')" 
-                                class="px-3 py-1.5 bg-[#333] hover:bg-[#444] border border-[#444] rounded text-sm transition-colors flex items-center gap-1">
-                            <svg class="w-4 h-4 transform ${episodesReversed ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="modal-ep-tools">
+                    <div class="info">
+                        <button onclick="toggleEpisodeOrder('${sourceCode}', '${id}')" class="order-btn">
+                            <svg class="order-ic" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
                             </svg>
                             <span>${episodesReversed ? '正序排列' : '倒序排列'}</span>
                         </button>
-                        <span class="text-gray-400 text-sm">共 ${data.episodes.length} 集</span>
+                        <span>共 ${data.episodes.length} 集</span>
                     </div>
-                    <button onclick="copyLinks()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors">
+                    <button onclick="copyLinks()" class="act-btn" style="height:34px;padding:0 14px;font-size:12.5px">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                         复制链接
                     </button>
                 </div>
-                <div id="episodesGrid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                <div id="episodesGrid" class="ep-grid">
                     ${renderEpisodes(vod_name, sourceCode, id)}
                 </div>
             `;
         } else {
             modalContent.innerHTML = `
-                <div class="text-center py-8">
-                    <div class="text-red-400 mb-2">❌ 未找到播放资源</div>
-                    <div class="text-gray-500 text-sm">该视频可能暂时无法播放，请尝试其他视频</div>
+                <div class="modal-error">
+                    <div class="icon">❌</div>
+                    <div>未找到播放资源</div>
+                    <div style="font-size:13px;color:var(--text-3);margin-top:6px">该视频可能暂时无法播放，请尝试其他视频</div>
                 </div>
             `;
         }
@@ -1122,7 +1108,7 @@ function renderEpisodes(vodName, sourceCode, vodId) {
         const realIndex = episodesReversed ? currentEpisodes.length - 1 - index : index;
         return `
             <button id="episode-${realIndex}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${realIndex}, '${vodId}')" 
-                    class="px-4 py-2 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg transition-colors text-center episode-btn">
+                    class="ep-item episode-btn">
                 ${realIndex + 1}
             </button>
         `;

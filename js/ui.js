@@ -36,12 +36,9 @@ function showToast(message, type = 'error') {
     if (!toast) {
         toast = document.createElement('div');
         toast.id = 'toast';
-        toast.className = 'fixed top-4 left-1/2 -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 z-50 opacity-0';
-        toast.style = 'z-index: 2147483647'
         toastMessage = document.createElement('p');
         toastMessage.id = 'toastMessage';
         toast.appendChild(toastMessage);
-
         document.body.appendChild(toast);
     }
 
@@ -66,25 +63,24 @@ function showNextToast() {
     const toast = document.getElementById('toast');
     const toastMessage = document.getElementById('toastMessage');
 
-    const bgColors = {
-        'error': 'bg-red-500',
-        'success': 'bg-green-500',
-        'info': 'bg-blue-500',
-        'warning': 'bg-yellow-500'
+    const typeClass = {
+        'error': 'toast-error',
+        'success': 'toast-success',
+        'info': 'toast-info',
+        'warning': 'toast-warning'
     };
 
-    const bgColor = bgColors[type] || bgColors.error;
-    toast.className = `fixed top-4 left-1/2 -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 ${bgColor} text-white z-50`;
+    toast.className = 'toast ' + (typeClass[type] || 'toast-error');
     toastMessage.textContent = message;
 
     // 显示提示
     toast.style.opacity = '1';
-    toast.style.transform = 'translateX(-50%) translateY(0)';
+    toast.style.transform = 'translate(-50%, 0)';
 
     // 3秒后自动隐藏
     setTimeout(() => {
         toast.style.opacity = '0';
-        toast.style.transform = 'translateX(-50%) translateY(-100%)';
+        toast.style.transform = 'translate(-50%, -8px)';
 
         // 等待动画完成后显示下一个toast
         setTimeout(() => {
@@ -127,10 +123,10 @@ function hideLoading() {
 
 function updateSiteStatus(isAvailable) {
     const statusEl = document.getElementById('siteStatus');
-    if (isAvailable) {
-        statusEl.innerHTML = '<span class="text-green-500">●</span> 可用';
-    } else {
-        statusEl.innerHTML = '<span class="text-red-500">●</span> 不可用';
+    if (statusEl) {
+        statusEl.innerHTML = isAvailable
+            ? '<span class="ok">●</span> 可用'
+            : '<span class="err">●</span> 不可用';
     }
 }
 
@@ -386,11 +382,11 @@ function loadViewingHistory() {
     const history = getViewingHistory();
 
     if (history.length === 0) {
-        historyList.innerHTML = `<div class="text-center text-gray-500 py-8">暂无观看记录</div>`;
+        historyList.innerHTML = `<div class="history-panel-empty">暂无观看记录</div>`;
         return;
     }
 
-    // 渲染历史记录
+    // 渲染历史记录（设计稿侧滑面板风格）
     historyList.innerHTML = history.map(item => {
         // 防止XSS
         const safeTitle = item.title
@@ -405,66 +401,33 @@ function loadViewingHistory() {
         const episodeText = item.episodeIndex !== undefined ?
             `第${item.episodeIndex + 1}集` : '';
 
-        // 格式化剧集信息
-        let episodeInfoHtml = '';
-        if (item.episodes && Array.isArray(item.episodes) && item.episodes.length > 0) {
-            const totalEpisodes = item.episodes.length;
-            const syncStatus = item.lastSyncTime ?
-                `<span class="text-green-400 text-xs" title="剧集列表已同步">✓</span>` :
-                `<span class="text-yellow-400 text-xs" title="使用缓存数据">⚠</span>`;
-            episodeInfoHtml = `<span class="text-xs text-gray-400">共${totalEpisodes}集 ${syncStatus}</span>`;
-        }
-
-        // 格式化进度信息
-        let progressHtml = '';
-        if (item.playbackPosition && item.duration && item.playbackPosition > 10 && item.playbackPosition < item.duration * 0.95) {
-            const percent = Math.round((item.playbackPosition / item.duration) * 100);
-            const formattedTime = formatPlaybackTime(item.playbackPosition);
-            const formattedDuration = formatPlaybackTime(item.duration);
-
-            progressHtml = `
-                <div class="history-progress">
-                    <div class="progress-bar">
-                        <div class="progress-filled" style="width:${percent}%"></div>
-                    </div>
-                    <div class="progress-text">${formattedTime} / ${formattedDuration}</div>
-                </div>
-            `;
-        }
-
         // 为防止XSS，使用encodeURIComponent编码URL
         const safeURL = encodeURIComponent(item.url);
 
-        // 构建历史记录项HTML，添加删除按钮，需要放在position:relative的容器中
+        // 构建历史记录项HTML（hp-item 设计稿侧滑列表样式）
         return `
-            <div class="history-item cursor-pointer relative group" onclick="playFromHistory('${item.url}', '${safeTitle}', ${item.episodeIndex || 0}, ${item.playbackPosition || 0})">
+            <div class="hp-item" onclick="playFromHistory('${item.url}', '${safeTitle}', ${item.episodeIndex || 0}, ${item.playbackPosition || 0})">
                 <button onclick="event.stopPropagation(); deleteHistoryItem('${safeURL}')"
-                        class="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-gray-400 hover:text-red-400 p-1 rounded-full hover:bg-gray-800 z-10"
-                        title="删除记录">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        class="hp-del" title="删除记录" aria-label="删除记录">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
                 </button>
-                <div class="history-info">
-                    <div class="history-title">${safeTitle}</div>
-                    <div class="history-meta">
-                        <span class="history-episode">${episodeText}</span>
-                        ${episodeText ? '<span class="history-separator mx-1">·</span>' : ''}
-                        <span class="history-source">${safeSource}</span>
-                        ${episodeInfoHtml ? '<span class="history-separator mx-1">·</span>' : ''}
-                        ${episodeInfoHtml}
-                    </div>
-                    ${progressHtml}
-                    <div class="history-time">${formatTimestamp(item.timestamp)}</div>
+                <div class="hp-thumb">
+                    <svg viewBox="0 0 80 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                        <rect width="80" height="120" fill="#1d2430"/>
+                        <circle cx="40" cy="48" r="16" fill="none" stroke="#ffb020" stroke-opacity=".5" stroke-width="2.5"/>
+                        <path d="M36 42l12 6-12 6z" fill="#ffb020" fill-opacity=".8"/>
+                    </svg>
+                </div>
+                <div style="flex:1;min-width:0">
+                    <div class="hp-title">${safeTitle}</div>
+                    <div class="hp-meta">${episodeText ? episodeText + ' · ' : ''}${safeSource}</div>
+                    <div class="hp-time">${formatTimestamp(item.timestamp)}</div>
                 </div>
             </div>
         `;
     }).join('');
-
-    // 检查是否存在较多历史记录，添加底部边距确保底部按钮不会挡住内容
-    if (history.length > 5) {
-        historyList.classList.add('pb-4');
-    }
 }
 
 // 格式化播放时间为 mm:ss 格式

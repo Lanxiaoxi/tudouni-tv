@@ -583,9 +583,19 @@ function initPlayer(videoUrl) {
         }
     });
 
+    // 应用默认倍速偏好（设置面板可配置）
+    try {
+        const defaultRate = parseFloat(localStorage.getItem('defaultPlaybackRate') || '1');
+        if (defaultRate >= 0.5 && defaultRate <= 2) {
+            art.on('ready', () => {
+                try { art.video.playbackRate = defaultRate; } catch (e) {}
+            });
+        }
+    } catch (e) {}
+
     // artplayer 没有 'fullscreenWeb:enter', 'fullscreenWeb:exit' 等事件
     // 所以原控制栏隐藏代码并没有起作用
-    // 实际起作用的是 artplayer 默认行为，它支持自动隐藏工具栏
+    // 实际起作用的是 artplayer 默认行为，它支持自动隐藏工���栏
     // 但有一个 bug： 在副屏全屏时，鼠标移出副屏后不会自动隐藏工具栏
     // 下面进一并重构和修复：
     let hideTimer;
@@ -833,23 +843,19 @@ function updateButtonStates() {
 
     // 处理上一集按钮
     if (currentEpisodeIndex > 0) {
-        prevButton.classList.remove('bg-gray-700', 'cursor-not-allowed');
-        prevButton.classList.add('bg-[#222]', 'hover:bg-[#333]');
+        prevButton.classList.remove('disabled');
         prevButton.removeAttribute('disabled');
     } else {
-        prevButton.classList.add('bg-gray-700', 'cursor-not-allowed');
-        prevButton.classList.remove('bg-[#222]', 'hover:bg-[#333]');
+        prevButton.classList.add('disabled');
         prevButton.setAttribute('disabled', '');
     }
 
     // 处理下一集按钮
     if (currentEpisodeIndex < currentEpisodes.length - 1) {
-        nextButton.classList.remove('bg-gray-700', 'cursor-not-allowed');
-        nextButton.classList.add('bg-[#222]', 'hover:bg-[#333]');
+        nextButton.classList.remove('disabled');
         nextButton.removeAttribute('disabled');
     } else {
-        nextButton.classList.add('bg-gray-700', 'cursor-not-allowed');
-        nextButton.classList.remove('bg-[#222]', 'hover:bg-[#333]');
+        nextButton.classList.add('disabled');
         nextButton.setAttribute('disabled', '');
     }
 }
@@ -875,7 +881,7 @@ function renderEpisodes() {
         html += `
             <button id="episode-${realIndex}" 
                     onclick="playEpisode(${realIndex})" 
-                    class="px-4 py-2 ${isActive ? 'episode-active' : '!bg-[#222] hover:!bg-[#333] hover:!shadow-none'} !border ${isActive ? '!border-blue-500' : '!border-[#333]'} rounded-lg transition-colors text-center episode-btn">
+                    class="ep-item episode-btn ${isActive ? 'cur' : ''}">
                 ${realIndex + 1}
             </button>
         `;
