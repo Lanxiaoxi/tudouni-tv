@@ -1,6 +1,6 @@
 """LibreTV API 入口。
 
-启动：uvicorn app.main:app --host 127.0.0.1 --port 8080
+启动：uvicorn app.main:app --host 127.0.0.1 --port 9797
 SERVE_STATIC=true（默认）时挂载前端目录，一键跑通全站（开发模式）。
 生产环境由 Nginx 托管前端并反代 /api/*，可设 SERVE_STATIC=false。
 """

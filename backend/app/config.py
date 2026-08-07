@@ -12,7 +12,7 @@ TOKEN_TTL_SECONDS = int(os.getenv("TOKEN_TTL_DAYS", "7")) * 86400
 
 # 服务
 HOST = os.getenv("HOST", "127.0.0.1")
-PORT = int(os.getenv("PORT", "8080"))
+PORT = int(os.getenv("PORT", "9797"))
 SERVE_STATIC = os.getenv("SERVE_STATIC", "true").lower() in ("1", "true", "yes", "on")
 
 # 代理

@@ -14,7 +14,7 @@ WorkingDirectory=/var/www/libretv/backend
 Environment=PASSWORD=你的密码
 Environment=SERVE_STATIC=false
 EnvironmentFile=-/var/www/libretv/backend/.env
-ExecStart=/usr/local/bin/uv run uvicorn app.main:app --host 127.0.0.1 --port 8080
+ExecStart=/usr/local/bin/uv run uvicorn app.main:app --host 127.0.0.1 --port 9797
 Restart=always
 RestartSec=3
 
