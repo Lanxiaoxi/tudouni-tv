@@ -1,8 +1,8 @@
 // 容错解析 localStorage（旧版本可能写入非法 JSON，解析失败回退空数组，避免整个脚本中断）
 let selectedAPIs = [];
-let customAPIs = [];
 try { selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '[]') || []; } catch (e) { selectedAPIs = []; }
-try { customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]') || []; } catch (e) { customAPIs = []; }
+// 注意：customAPIs 全局声明在 js/core/config.js（容错版），此处不再重复声明
+// （顶层 let/const 同名会导致 SyntaxError: Identifier already declared，整个脚本解析失败）
 
 // 改进返回功能
 function goBack(event) {
