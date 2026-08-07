@@ -97,9 +97,9 @@ async def api_vodlist(
     return {"code": 0, "data": data, "message": "ok"}
 
 
-@app.get("/api/home")
-async def api_home(_: None = Depends(auth.require_token)):
-    """首页聚合：后端完成拉取/去重/分组/hero 选片，一次返回，前端只渲染。"""
+@app.get("/api/items")
+async def api_items(_: None = Depends(auth.require_token)):
+    """首页数据项：后端完成拉取/去重，一次返回全量 items，前端只做分类与渲染。"""
     data = await home.get_home()
     return {"code": 0, "data": data, "message": "ok"}
 

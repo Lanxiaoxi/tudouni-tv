@@ -116,7 +116,7 @@ function posterCardHTML(item, i, extraClass) {
     </div>`;
 }
 
-// 从数据池筛选并渲染一行（数据由后端 /api/home 统一拉取去重，前端保留分类业务）
+// 从数据池筛选并渲染一行（数据由后端 /api/items 统一拉取去重，前端保留分类业务）
 function renderRow(stripId, filterCat, count) {
     const strip = document.getElementById(stripId);
     if (!strip) return;
@@ -251,9 +251,9 @@ async function renderHomeRows() {
         if (el) el.innerHTML = `<div class="row-loading"><div class="spin"></div><span>加载中...</span></div>`;
     });
     try {
-        // 后端 /api/home 一次完成"拉取 4 源 × 2 页 + 去重"（无状态通用）；
+        // 后端 /api/items 一次完成"拉取 4 源 × 2 页 + 去重"（无状态通用）；
         // 前端从 pool 做分类分组与 hero 选片（业务逻辑保留前端，增删种类不动后端）
-        const data = await window.Api.get('/api/home');
+        const data = await window.Api.get('/api/items');
         const items = (data && data.items) || [];
         if (!items.length) throw new Error('首页数据为空');
         window.homeDataPool = items;
