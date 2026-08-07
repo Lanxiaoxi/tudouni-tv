@@ -1,7 +1,10 @@
 // 全局变量
 // 默认选中资源：动态取当前 API_SITES 中前 4 个普通源（避免写死已失效的旧 key）
-let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || 'null')
-    || Object.keys(API_SITES).filter(k => !API_SITES[k].adult).slice(0, 4);
+// 容错解析 localStorage（坏值回退默认选中）
+let _storedAPIs = [];
+try { _storedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || 'null') || []; } catch (e) { _storedAPIs = []; }
+let selectedAPIs = _storedAPIs.length ? _storedAPIs
+    : Object.keys(API_SITES).filter(k => !API_SITES[k].adult).slice(0, 4);
 // customAPIs 全局定义在 config.js（app.js/player.html 共用）
 
 // 添加当前播放的集数索引
@@ -20,7 +23,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // 已随数据源更换失效）或已禁用的自定义源 custom_*，导致复选框全不勾选、
     // "已选API数量"却仍按数组长度显示 4，且搜索时一个源都用不上。
     // 处理：只保留 API_SITES 中真实存在的 key；若为空则默认选中前 4 个普通源。
-    let _stored = JSON.parse(localStorage.getItem('selectedAPIs') || '[]')
+    let _stored = [];
+    try { _stored = JSON.parse(localStorage.getItem('selectedAPIs') || '[]') || []; } catch (e) { _stored = []; }
+    _stored = _stored
         .filter(id => !String(id).startsWith('custom_'))                       // 移除已禁用的自定义源
         .filter(id => Object.prototype.hasOwnProperty.call(API_SITES, id));    // 移除已不存在的源
     if (_stored.length === 0) {

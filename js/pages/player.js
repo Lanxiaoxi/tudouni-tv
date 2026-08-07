@@ -1,5 +1,8 @@
-const selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '[]');
-const customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
+// 容错解析 localStorage（旧版本可能写入非法 JSON，解析失败回退空数组，避免整个脚本中断）
+let selectedAPIs = [];
+let customAPIs = [];
+try { selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '[]') || []; } catch (e) { selectedAPIs = []; }
+try { customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]') || []; } catch (e) { customAPIs = []; }
 
 // 改进返回功能
 function goBack(event) {
@@ -187,9 +190,9 @@ function initializePageContent() {
             currentEpisodes = JSON.parse(decodeURIComponent(episodesList));
 
         } else {
-            // 否则从localStorage获取
-            currentEpisodes = JSON.parse(localStorage.getItem('currentEpisodes') || '[]');
-
+            // 否则从localStorage获取（容错解析，坏值回退空数组）
+            try { currentEpisodes = JSON.parse(localStorage.getItem('currentEpisodes') || '[]') || []; }
+            catch (e) { currentEpisodes = []; }
         }
 
         // 检查集数索引是否有效，如果无效则调整为0
@@ -1470,7 +1473,8 @@ function renderResourceInfoBar() {
         resourceName = API_SITES[currentSource].name;
     }
     if (resourceName === currentSource) {
-        const customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]');
+        let customAPIs = [];
+        try { customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]') || []; } catch (e) { customAPIs = []; }
         const customIndex = parseInt(currentSource.replace('custom_', ''), 10);
         if (customAPIs[customIndex]) {
             resourceName = customAPIs[customIndex].name || '自定义资源';

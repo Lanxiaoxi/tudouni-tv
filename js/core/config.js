@@ -4,7 +4,9 @@ const SEARCH_HISTORY_KEY = 'videoSearchHistory';
 const MAX_HISTORY_ITEMS = 5;
 
 // 自定义 API 列表（全局；app.js 设置面板与 search.js 共用，player.html 不加载 app.js 也需可用）
-let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]');
+// 容错解析 localStorage（坏值回退空数组，避免脚本中断）
+let customAPIs = [];
+try { customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]') || []; } catch (e) { customAPIs = []; }
 
 // 获取自定义 API 信息（按索引）
 function getCustomApiInfo(customApiIndex) {
