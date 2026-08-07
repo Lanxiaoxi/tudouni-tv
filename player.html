@@ -47,7 +47,22 @@
             </div>
             <div class="brand-name">Tudouni<em>TV</em></div>
         </button>
+        <nav class="nav-links" id="navLinks">
+            <a class="nav-link" href="/">首页</a>
+            <a class="nav-link" href="/?cat=movie">电影</a>
+            <a class="nav-link" href="/?cat=series">剧集</a>
+            <a class="nav-link" href="/?cat=anime">动漫</a>
+            <a class="nav-link" href="/?cat=variety">综艺</a>
+            <a class="nav-link" href="/?cat=history">历史记录</a>
+        </nav>
         <h2 id="videoTitle" class="watch-title" style="flex:1;text-align:center;font-size:16px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 12px"></h2>
+        <div class="search-wrap" style="flex-shrink:0;max-width:220px">
+            <div class="search" style="height:34px">
+                <input id="playerSearchInput" type="text" placeholder="搜索…" aria-label="搜索"
+                       autocomplete="off" style="height:100%"
+                       onkeydown="if(event.key==='Enter'){var v=this.value.trim();if(v){location.href='/s='+encodeURIComponent(v)}}">
+            </div>
+        </div>
         <button id="goBack" onclick="goBack(event)" class="ep-nav-btn" style="flex-shrink:0" aria-label="返回上一页">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
             上一页

@@ -81,4 +81,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }, 300);
     }
+
+    // 查询字符串分类参数 (?cat=movie → 进入后直接定位分类页；?cat=history → 历史页)
+    // 用于播放页等页面的导航链接跳转
+    const catParam = urlParams.get('cat');
+    if (catParam === 'history') {
+        setTimeout(() => { if (typeof switchView === 'function') switchView('history'); }, 350);
+    } else if (catParam && typeof CAT_INFO !== 'undefined' && CAT_INFO[catParam]) {
+        setTimeout(() => { if (typeof goCategory === 'function') goCategory(catParam); }, 350);
+    }
 });
