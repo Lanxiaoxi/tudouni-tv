@@ -6,6 +6,7 @@ SERVE_STATIC=true（默认）时挂载前端目录，一键跑通全站（开发
 """
 
 import logging
+import mimetypes
 import time
 
 from fastapi import Depends, FastAPI, Query, Request
@@ -15,6 +16,11 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, detail, home, proxy, search, vodlist
+
+# 修复 Windows 上 Python mimetypes 把 .js 映射成 text/plain 的问题
+# （浏览器会拒绝执行 text/plain 的 <script>，导致前端 JS 全部不生效）
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("text/javascript", ".mjs")
 from .config import FRONTEND_DIR, SERVE_STATIC
 
 logging.basicConfig(
