@@ -78,7 +78,10 @@ async def get_detail(
     if resp.status_code != 200:
         raise HTTPException(502, f"详情请求失败: {resp.status_code}")
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        raise HTTPException(502, "上游返回的数据格式异常")
     lst = data.get("list") if isinstance(data, dict) else None
     if not lst or not isinstance(lst, list) or not lst:
         raise HTTPException(404, "未获取到视频详情")

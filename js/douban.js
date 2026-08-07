@@ -108,6 +108,7 @@ function initDouban() {
     
     // 初始加载热门内容
     if (localStorage.getItem('doubanEnabled') === 'true') {
+        fetchDoubanTags();  // 用豆瓣线上标签刷新标签栏（此前从未被调用，标签栏一直是本地默认值）
         renderRecommend(doubanCurrentTag, doubanPageSize, doubanPageStart);
     }
 }
@@ -303,6 +304,7 @@ function renderDoubanMovieTvSwitch() {
             
             // 初始加载热门内容
             if (localStorage.getItem('doubanEnabled') === 'true') {
+                fetchDoubanTags();  // 加载豆瓣标签栏（热门/最新/经典...），此前从未被调用
                 renderRecommend(doubanCurrentTag, doubanPageSize, doubanPageStart);
             }
         }

@@ -2,7 +2,7 @@
 // 默认选中资源：动态取当前 API_SITES 中前 4 个普通源（避免写死已失效的旧 key）
 let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || 'null')
     || Object.keys(API_SITES).filter(k => !API_SITES[k].adult).slice(0, 4);
-let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
+// customAPIs 全局定义在 config.js（app.js/player.html 共用）
 
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
@@ -181,6 +181,7 @@ function checkAdultAPIsSelected() {
     const hasAdultSelected = adultBuiltinCheckboxes.length > 0 || customApiCheckboxes.length > 0;
 
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
+    if (!yellowFilterToggle) return;  // 空值保护：元素不存在（如非首页）时直接返回
     const yellowFilterContainer = yellowFilterToggle.closest('div').parentNode;
     const filterDescription = yellowFilterContainer.querySelector('p.filter-description');
 
@@ -502,21 +503,7 @@ function removeCustomApi(index) {
 }
 */
 
-function toggleSettings(e) {
-    const settingsPanel = document.getElementById('settingsPanel');
-    if (!settingsPanel) return;
-
-    if (settingsPanel.classList.contains('show')) {
-        settingsPanel.classList.remove('show');
-    } else {
-        settingsPanel.classList.add('show');
-    }
-
-    if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-}
+// toggleSettings 由 js/ui.js 定义（含密码校验与"打开设置时关闭历史面板"增强），此处不再重复定义
 
 // 设置事件监听器
 function setupEventListeners() {
@@ -619,14 +606,7 @@ function resetSearchArea() {
     }
 }
 
-// 获取自定义API信息
-function getCustomApiInfo(customApiIndex) {
-    const index = parseInt(customApiIndex);
-    if (isNaN(index) || index < 0 || index >= customAPIs.length) {
-        return null;
-    }
-    return customAPIs[index];
-}
+// 获取自定义 API 信息（已移至 js/config.js 全局，供 player.html 的 search.js 共用）
 
 // 搜索功能 - 修改为支持多选API和多页结果
 async function search() {

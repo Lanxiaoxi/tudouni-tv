@@ -47,7 +47,10 @@ async def validate_target_url(url_str: str) -> str:
         pass  # 是域名，继续
 
     # 域名：解析出全部地址，逐个校验（防 DNS 返回多个地址时漏网）
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        raise HTTPException(400, "无效的端口")
     try:
         infos = await asyncio.to_thread(socket.getaddrinfo, host, port)
     except socket.gaierror:

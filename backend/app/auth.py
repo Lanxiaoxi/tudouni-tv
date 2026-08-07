@@ -15,6 +15,14 @@ from .config import PASSWORD, TOKEN_TTL_SECONDS
 _tokens: dict[str, float] = {}  # token -> 过期时间戳(epoch 秒)
 
 
+def _prune_tokens() -> None:
+    """清理已过期 token，防止表无限增长。"""
+    now = time.time()
+    expired = [t for t, exp in _tokens.items() if exp <= now]
+    for t in expired:
+        _tokens.pop(t, None)
+
+
 async def login(password: str) -> dict:
     if not PASSWORD:
         raise HTTPException(500, "服务器未配置 PASSWORD 环境变量")
@@ -23,6 +31,7 @@ async def login(password: str) -> dict:
 
     token = secrets.token_hex(32)
     _tokens[token] = time.time() + TOKEN_TTL_SECONDS
+    _prune_tokens()  # 登录时顺带清理过期 token
     return {"token": token, "expires_in": TOKEN_TTL_SECONDS}
 
 

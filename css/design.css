@@ -227,7 +227,7 @@ svg{display:block}
 .row-head .more{font-size:13px;color:var(--text-3);transition:color .2s;cursor:pointer;background:none;border:none;font-family:inherit}
 .row-head .more:hover{color:var(--accent)}
 .poster-strip{
-  display:grid;grid-auto-flow:column;grid-auto-columns:minmax(172px,1fr);
+  display:grid;grid-auto-flow:column;grid-auto-columns:172px;
   grid-template-rows:1fr;gap:16px;overflow-x:auto;padding:6px 2px 16px;
   scroll-snap-type:x mandatory;scrollbar-width:thin;
 }
@@ -796,7 +796,7 @@ svg{display:block}
   .hero-desc{-webkit-line-clamp:3}
   .btn-hero{padding:0 18px}
   .row{margin:28px 12px 0}
-  .poster-strip{grid-auto-columns:minmax(138px,1fr);gap:12px}
+  .poster-strip{grid-auto-columns:138px;gap:12px}
   .watch-layout{margin:0 12px}
   .watch-title{font-size:19px}
   .ep-grid{grid-template-columns:repeat(auto-fill,minmax(64px,1fr))}
@@ -812,7 +812,7 @@ svg{display:block}
   .avatar{display:none}
 }
 @media(max-width:420px){
-  .poster-strip{grid-auto-columns:minmax(122px,1fr)}
+  .poster-strip{grid-auto-columns:122px}
 }
 
 /* ============================================================

@@ -153,9 +153,44 @@ async function renderRow(stripId, filterCat, page, count) {
 }
 
 /* ---------- 首页 Hero ---------- */
+// Hero 背景艺术图（渐变 + 首字），无封面时的兜底
+function heroArtSvg(item, i) {
+    const palette = DISCOVERY_PALETTE[i % DISCOVERY_PALETTE.length];
+    const ch = (item.vod_name || '影').charAt(0);
+    const gid = 'hart' + (item.vod_id || ('h' + i));
+    return `<svg class="hero-art-svg" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${palette[0]}"/><stop offset="1" stop-color="${palette[1]}"/>
+    </linearGradient></defs>
+    <rect width="1200" height="600" fill="url(#${gid})"/>
+    <circle cx="1050" cy="120" r="180" fill="#ffffff" opacity=".05"/>
+    <circle cx="200" cy="520" r="220" fill="#000000" opacity=".12"/>
+    <text x="600" y="350" font-family="'Noto Sans SC','Microsoft YaHei',sans-serif" font-size="200" fill="rgba(255,255,255,.14)" text-anchor="middle" font-weight="900">${esc(ch)}</text>
+  </svg>`;
+}
+
+// 渲染 Hero 背景海报（SVG 渐变始终渲染 + 真实封面叠加，封面失败自动回退到渐变）
+function renderHeroArt(heroBanner, pick, idx) {
+    if (!heroBanner) return;
+    heroBanner.querySelectorAll('.hero-art, .hero-art-svg').forEach(el => el.remove());
+    // SVG 渐变兜底（始终存在，img 盖在其上）
+    heroBanner.insertAdjacentHTML('afterbegin', heroArtSvg(pick, idx));
+    // 有封面则叠加真实海报；加载失败移除后露出渐变
+    const cover = (pick.vod_pic && pick.vod_pic.startsWith('http')) ? pick.vod_pic : '';
+    if (cover) {
+        const img = document.createElement('img');
+        img.className = 'hero-art';
+        img.src = cover;
+        img.alt = '';
+        img.onerror = function () { this.remove(); };
+        heroBanner.insertBefore(img, heroBanner.firstChild);
+    }
+}
+
 async function renderHero() {
     const heroBody = document.getElementById('heroBody');
     if (!heroBody) return;
+    const heroBanner = document.getElementById('heroBanner');
     try {
         const items = await aggregateVodList(1, null);
         // 优先按评分排序，否则直接取第一条；不要求评分 > 0
@@ -170,6 +205,9 @@ async function renderHero() {
             setTimeout(renderHero, 2000);
             return;
         }
+
+        // 背景海报（渐变兜底 + 真实封面）
+        renderHeroArt(heroBanner, pick, 0);
 
         const safeId = (pick.vod_id || '').toString().replace(/[^\w-]/g, '');
         const safeName = esc(pick.vod_name || '热门影视');

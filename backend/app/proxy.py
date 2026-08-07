@@ -20,6 +20,9 @@ _client = httpx.AsyncClient(follow_redirects=True, timeout=REQUEST_TIMEOUT)
 # url -> (过期时间戳, body, content_type)
 _cache: dict[str, tuple[float, bytes, str]] = {}
 
+# 缓存上限：超过后清理过期项，仍超限则删最早 1/4（防内存无限增长）
+_MAX_CACHE_ITEMS = 500
+
 # 转发时剔除的敏感响应头
 _FILTERED_HEADERS = {
     "content-security-policy", "set-cookie", "x-frame-options",
@@ -50,6 +53,19 @@ async def _fetch_with_retry(url: str) -> tuple[bytes, str]:
     raise HTTPException(502, f"代理请求失败: {last_err}")
 
 
+def _trim_cache(now: float) -> None:
+    """缓存超过上限时清理过期项；仍超限则删除最早的 1/4。"""
+    if len(_cache) <= _MAX_CACHE_ITEMS:
+        return
+    expired = [k for k, v in _cache.items() if v[0] <= now]
+    for k in expired:
+        del _cache[k]
+    if len(_cache) > _MAX_CACHE_ITEMS:
+        ordered = sorted(_cache.items(), key=lambda kv: kv[1][0])
+        for k, _ in ordered[: max(1, len(ordered) // 4)]:
+            del _cache[k]
+
+
 async def proxy_url(url: str) -> Response:
     await validate_target_url(url)
 
@@ -61,6 +77,7 @@ async def proxy_url(url: str) -> Response:
         body, content_type = await _fetch_with_retry(url)
         if len(body) <= MAX_CACHE_BYTES:
             _cache[url] = (now + CACHE_TTL_SECONDS, body, content_type)
+            _trim_cache(now)
 
     headers = {"Content-Type": content_type, "Cache-Control": "public, max-age=60"}
     return Response(content=body, headers=headers)

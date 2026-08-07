@@ -3,6 +3,16 @@
 const SEARCH_HISTORY_KEY = 'videoSearchHistory';
 const MAX_HISTORY_ITEMS = 5;
 
+// 自定义 API 列表（全局；app.js 设置面板与 search.js 共用，player.html 不加载 app.js 也需可用）
+let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]');
+
+// 获取自定义 API 信息（按索引）
+function getCustomApiInfo(customApiIndex) {
+    const index = parseInt(customApiIndex);
+    if (isNaN(index) || index < 0 || index >= customAPIs.length) return null;
+    return customAPIs[index];
+}
+
 // 密码保护配置
 // 注意：PASSWORD 环境变量是必需的，所有部署都必须设置密码以确保安全
 const PASSWORD_CONFIG = {
