@@ -161,7 +161,8 @@ svg{display:block}
   isolation:isolate;display:flex;align-items:flex-end;
   box-shadow:var(--shadow-2);
 }
-.hero-art{position:absolute;inset:0;width:100%;height:100%;z-index:0;object-fit:cover}
+/* 海报只占右侧 55%，避免竖版小图全宽放大糊（Netflix 式构图，左侧留文字区） */
+.hero-art{position:absolute;top:0;right:0;width:55%;height:100%;z-index:0;object-fit:cover;object-position:right center}
 .hero-art-svg{position:absolute;inset:0;width:100%;height:100%;z-index:0}
 .hero::before{
   content:"";position:absolute;inset:0;z-index:2;
@@ -793,6 +794,7 @@ svg{display:block}
   .main{padding:76px 0 84px}
   .hero{margin:0 12px;height:min(430px,58vh)}
   .hero-body{padding:28px 22px}
+  .hero-art{width:100%}
   .hero-title{font-size:30px}
   .hero-desc{-webkit-line-clamp:3}
   .btn-hero{padding:0 18px}
