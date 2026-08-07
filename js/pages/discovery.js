@@ -186,7 +186,8 @@ function renderHeroArt(heroBanner, pick, idx) {
         img.src = cover;
         img.alt = '';
         // 关键层级用 inline style 注入（不依赖 CSS 文件，避免缓存导致渲染失效）
-        img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:0;object-fit:cover';
+        // img 必须在 svg 之上（svg 后插入 DOM，同层级会盖住 img）
+        img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:1;object-fit:cover';
         img.onerror = function () { this.remove(); };
         heroBanner.insertBefore(img, heroBanner.firstChild);
     }
