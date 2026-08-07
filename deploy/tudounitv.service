@@ -1,0 +1,27 @@
+# LibreTV 后端 systemd 服务
+# 放置到 /etc/systemd/system/tudounitv.service，然后：
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now tudounitv
+
+[Unit]
+Description=LibreTV Python Backend (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/libretv/backend
+Environment=PASSWORD=你的密码
+Environment=SERVE_STATIC=false
+EnvironmentFile=-/var/www/libretv/backend/.env
+ExecStart=/usr/local/bin/uv run uvicorn app.main:app --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=3
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

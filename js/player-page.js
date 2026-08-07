@@ -77,19 +77,8 @@ async function ppFetchList(apiId) {
     try {
         const site = API_SITES[apiId];
         if (!site) return [];
-        const sep = site.api.includes('?') ? '&' : '?';
-        const apiUrl = site.api + sep + 'ac=videolist&pg=1';
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 10000);
-        const proxiedUrl = window.ProxyAuth && window.ProxyAuth.addAuthToProxyUrl
-            ? await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(apiUrl))
-            : PROXY_URL + encodeURIComponent(apiUrl);
-        const response = await fetch(proxiedUrl, { headers: API_CONFIG.search.headers, signal: controller.signal });
-        clearTimeout(timer);
-        if (!response.ok) return [];
-        const data = await response.json();
-        if (!data || !data.list || !Array.isArray(data.list)) return [];
-        return data.list.map(item => ({ ...item, source_code: apiId, source_name: site.name }));
+        const data = await window.Api.get('/api/vodlist', { source: apiId, pg: 1 });
+        return (data && data.items) || [];
     } catch (e) {
         return [];
     }

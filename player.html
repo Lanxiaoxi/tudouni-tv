@@ -15,8 +15,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 
-    <script src="libs/tailwindcss.min.js?v=2"></script>
-    <script src="js/version-check.js?v=2"></script>
+    <script src="libs/tailwindcss.min.js?v=3"></script>
+    <script src="js/version-check.js?v=3"></script>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/player.css">
     <link rel="stylesheet" href="css/design.css">
@@ -222,31 +222,26 @@
     <div id="toast" class="hidden" aria-live="polite"><p id="toastMessage"></p></div>
 
     <!-- 引入纯 JS sha256（HTTP 下依然可用） -->
-    <script src="libs/sha256.min.js?v=2"></script>
+    <script src="libs/sha256.min.js?v=3"></script>
     <script>
         // 保存原始 js‑sha256 实现，避免被 password.js 覆盖
         window._jsSha256 = window.sha256;
     </script>
 
-    <script src="libs/hls.min.js?v=2" crossorigin="anonymous"></script>
-    <script src="libs/artplayer.min.js?v=2" crossorigin="anonymous"></script>
+    <script src="libs/hls.min.js?v=3" crossorigin="anonymous"></script>
+    <script src="libs/artplayer.min.js?v=3" crossorigin="anonymous"></script>
 
-    <script src="js/config.js?v=2"></script>
-    <script src="js/proxy-auth.js?v=2"></script>
-    <script src="js/customer_site.js?v=2"></script>
-    <script src="js/password.js?v=2"></script>
-    <script src="js/ui.js?v=2"></script>
-    <script src="js/api.js?v=2"></script>
-    <script src="js/search.js?v=2"></script>
-    <script src="js/player.js?v=2"></script>
-    <script src="js/player-page.js?v=2"></script>
+    <script src="js/config.js?v=3"></script>
+    <script src="js/proxy-auth.js?v=3"></script>
+    <script src="js/customer_site.js?v=3"></script>
+    <script src="js/password.js?v=3"></script>
+    <script src="js/ui.js?v=3"></script>
+    <script src="js/api.js?v=3"></script>
+    <script src="js/search.js?v=3"></script>
+    <script src="js/player.js?v=3"></script>
+    <script src="js/player-page.js?v=3"></script>
 
     <script>
-        // 创建全局环境变量对象
-        window.__ENV__ = window.__ENV__ || {};
-        // 注入服务器端环境变量 (将由服务器端替换)
-        window.__ENV__.PASSWORD = "{{PASSWORD}}";
-
         // 修复 home 跳转
         document.addEventListener('DOMContentLoaded', function() {
             // 使用事件委托处理首页按钮点击

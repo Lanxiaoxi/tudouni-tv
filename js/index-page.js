@@ -5,8 +5,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const hasSeenDisclaimer = localStorage.getItem('hasSeenDisclaimer');
     
     if (!hasSeenDisclaimer) {
-        // 显示弹窗
+        // 显示弹窗（.hidden 是 display:none !important，必须移除该类）
         const disclaimerModal = document.getElementById('disclaimerModal');
+        disclaimerModal.classList.remove('hidden');
+        disclaimerModal.classList.add('show');
         disclaimerModal.style.display = 'flex';
         
         // 添加接受按钮事件
@@ -14,6 +16,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // 保存用户已看过声明的状态
             localStorage.setItem('hasSeenDisclaimer', 'true');
             // 隐藏弹窗
+            disclaimerModal.classList.add('hidden');
+            disclaimerModal.classList.remove('show');
             disclaimerModal.style.display = 'none';
         });
     }

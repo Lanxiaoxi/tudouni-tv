@@ -13,6 +13,13 @@ dist-ssr
 coverage
 *.local
 
+# Python / uv (backend)
+backend/.venv/
+backend/.env
+__pycache__/
+*.pyc
+.uv/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

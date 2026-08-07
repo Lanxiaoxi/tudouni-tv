@@ -17,8 +17,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 
-    <script src="libs/tailwindcss.min.js?v=2"></script>
-    <script src="js/version-check.js?v=2"></script>
+    <script src="libs/tailwindcss.min.js?v=3"></script>
+    <script src="js/version-check.js?v=3"></script>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/design.css">
 </head>
@@ -411,37 +411,29 @@
     </script>
 
     <!-- 引入纯 JS sha256（HTTP 下依然可用） -->
-    <script src="libs/sha256.min.js?v=2"></script>
+    <script src="libs/sha256.min.js?v=3"></script>
     <script>
         // 保存原始 js‑sha256 实现，避免被 password.js 覆盖
         window._jsSha256 = window.sha256;
     </script>
-    <script src="js/config.js?v=2"></script>
-    <script src="js/proxy-auth.js?v=2"></script>
-    <script src="js/customer_site.js?v=2"></script>
-    <script src="js/ui.js?v=2"></script>
-    <script src="js/api.js?v=2"></script>
-    <script src="js/douban.js?v=2"></script>
-    <script src="js/password.js?v=2"></script>
-    <script src="js/search.js?v=2"></script>
-    <script src="js/app.js?v=2"></script>
-    <script src="js/discovery.js?v=2"></script>
+    <script src="js/config.js?v=3"></script>
+    <script src="js/proxy-auth.js?v=3"></script>
+    <script src="js/customer_site.js?v=3"></script>
+    <script src="js/ui.js?v=3"></script>
+    <script src="js/api.js?v=3"></script>
+    <script src="js/douban.js?v=3"></script>
+    <script src="js/password.js?v=3"></script>
+    <script src="js/search.js?v=3"></script>
+    <script src="js/app.js?v=3"></script>
+    <script src="js/discovery.js?v=3"></script>
 
     <!-- PWA 注册 -->
-    <script src="js/pwa-register.js?v=2"></script>
-
-    <!-- 环境变量注入脚本 -->
-    <script>
-        // 创建全局环境变量对象
-        window.__ENV__ = window.__ENV__ || {};
-        // 注入服务器端环境变量 (将由服务器端替换)
-        window.__ENV__.PASSWORD = "{{PASSWORD}}";
-    </script>
+    <script src="js/pwa-register.js?v=3"></script>
 
     <!-- 版本检测脚本 -->
-    <script src="js/version-check.js?v=2"></script>
+    <script src="js/version-check.js?v=3"></script>
 
     <!-- 添加弹窗和URL搜索参数处理脚本 -->
-    <script src="js/index-page.js?v=2"></script>
+    <script src="js/index-page.js?v=3"></script>
 </body>
 </html>

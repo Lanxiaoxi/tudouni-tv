@@ -61,12 +61,12 @@ function initDouban() {
         const isEnabled = localStorage.getItem('doubanEnabled') === 'true';
         doubanToggle.checked = isEnabled;
         
-        // 设置开关外观
+        // 设置开关外观（实际 DOM 为 input + span.slider，无 Tailwind 圆点结构，做空值保护）
         const toggleBg = doubanToggle.nextElementSibling;
-        const toggleDot = toggleBg.nextElementSibling;
+        const toggleDot = toggleBg ? toggleBg.nextElementSibling : null;
         if (isEnabled) {
-            toggleBg.classList.add('bg-pink-600');
-            toggleDot.classList.add('translate-x-6');
+            if (toggleBg) toggleBg.classList.add('bg-pink-600');
+            if (toggleDot) toggleDot.classList.add('translate-x-6');
         }
         
         // 添加事件监听
@@ -76,11 +76,11 @@ function initDouban() {
             
             // 更新开关外观
             if (isChecked) {
-                toggleBg.classList.add('bg-pink-600');
-                toggleDot.classList.add('translate-x-6');
+                if (toggleBg) toggleBg.classList.add('bg-pink-600');
+                if (toggleDot) toggleDot.classList.add('translate-x-6');
             } else {
-                toggleBg.classList.remove('bg-pink-600');
-                toggleDot.classList.remove('translate-x-6');
+                if (toggleBg) toggleBg.classList.remove('bg-pink-600');
+                if (toggleDot) toggleDot.classList.remove('translate-x-6');
             }
             
             // 更新显示状态
@@ -436,12 +436,8 @@ async function fetchDoubanData(url) {
     };
 
     try {
-        // 添加鉴权参数到代理URL
-        const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ? 
-            await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(url)) :
-            PROXY_URL + encodeURIComponent(url);
-            
-        // 尝试直接访问（豆瓣API可能允许部分CORS请求）
+        // 走后端通用代理（鉴权由 proxy-auth.js 的 fetch 拦截器附加）
+        const proxiedUrl = '/api/proxy?url=' + encodeURIComponent(url);
         const response = await fetch(proxiedUrl, fetchOptions);
         clearTimeout(timeoutId);
         
@@ -541,23 +537,9 @@ function renderDoubanCards(data, container) {
                 <div class="p-sub"><span>豆瓣评分</span><span>·</span><span>${safeRate}</span></div>
             `;
 
-            // 代理URL作为备选：直连失败时切换到带鉴权的代理地址
-            // （server.mjs 的 /proxy/ 需要 ?auth=...&t=...，旧代码漏了鉴权导致兜底也失效）
+            // 封面直连加载（img 标签不受 CORS 限制；重构后代理需 token，
+            // img 无法附加 Authorization 头，故去掉代理兜底，失败时由 SVG 艺术图兜底）
             const imgEl = card.querySelector('img');
-            imgEl.addEventListener('error', async function () {
-                if (this.dataset.fallbackTried) return;
-                this.dataset.fallbackTried = '1';
-                try {
-                    const authUrl = window.ProxyAuth?.addAuthToProxyUrl
-                        ? await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(originalCoverUrl))
-                        : PROXY_URL + encodeURIComponent(originalCoverUrl);
-                    if (this.isConnected) {
-                        this.src = authUrl;
-                    }
-                } catch (e) {
-                    console.error('豆瓣封面代理加载失败:', e);
-                }
-            });
             
             fragment.appendChild(card);
         });

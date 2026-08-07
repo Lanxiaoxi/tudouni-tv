@@ -1,0 +1,43 @@
+# LibreTV 后端部署配置示例
+# 适用于已有 Nginx 多子域名反代的 Linux 服务器
+
+# ============ Nginx：/etc/nginx/sites-available/tudounitv.conf ============
+# 1. 前端独立子域名，静态文件由 Nginx 托管
+# 2. /api/* 反代到本机 Python 后端（127.0.0.1:8080）
+# 3. 建议配置 HTTPS（certbot --nginx 自动签发）
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name tv.你的域名;   # 改成你的子域名
+
+    # 前端静态文件根目录（LibreTV 仓库根，含 index.html/js/css）
+    root /var/www/libretv;
+    index index.html;
+
+    # 前端页面路由：找不到文件时回退到 index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+        # 静态资源缓存（js/css 带 ?v= 版本号，可放心长缓存）
+        location ~* \.(js|css|png|jpg|svg|ico|woff2?)$ {
+            expires 7d;
+            add_header Cache-Control "public";
+        }
+    }
+
+    # API 反代到 Python 后端
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;      # 聚合搜索多源并行，放宽超时
+        proxy_connect_timeout 10s;
+    }
+
+    # 安全响应头
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options SAMEORIGIN;
+    add_header Referrer-Policy strict-origin-when-cross-origin;
+}

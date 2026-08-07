@@ -1,24 +1,19 @@
-// 密码保护功能
+// 密码保护功能（重构后：登录态由后端 /api/auth 校验，前端不再持有密码哈希）
 
 /**
  * 检查是否设置了密码保护
- * 通过读取页面上嵌入的环境变量来检查
+ * 重构后：密码由后端 PASSWORD 环境变量配置，前端一律视为已启用
  */
 function isPasswordProtected() {
-    // 只检查普通密码
-    const pwd = window.__ENV__ && window.__ENV__.PASSWORD;
-    
-    // 检查普通密码是否有效
-    return typeof pwd === 'string' && pwd.length === 64 && !/^0+$/.test(pwd);
+    return true;
 }
 
 /**
  * 检查是否强制要求设置密码
- * 如果没有设置有效的 PASSWORD，则认为需要强制设置密码
- * 为了安全考虑，所有部署都必须设置密码
+ * 重构后：密码在服务器 .env 配置，前端无需也无法设置，恒为 false
  */
 function isPasswordRequired() {
-    return !isPasswordProtected();
+    return false;
 }
 
 /**
@@ -41,51 +36,30 @@ window.isPasswordProtected = isPasswordProtected;
 window.isPasswordRequired = isPasswordRequired;
 
 /**
- * 验证用户输入的密码是否正确（异步，使用SHA-256哈希）
+ * 验证用户输入的密码是否正确（重构后：调后端 /api/auth 签发 token）
  */
 async function verifyPassword(password) {
     try {
-        const correctHash = window.__ENV__?.PASSWORD;
-        if (!correctHash) return false;
+        const token = await window.ProxyAuth.login(password);
+        if (!token) return false;
 
-        const inputHash = await sha256(password);
-        const isValid = inputHash === correctHash;
-
-        if (isValid) {
-            localStorage.setItem(PASSWORD_CONFIG.localStorageKey, JSON.stringify({
-                verified: true,
-                timestamp: Date.now(),
-                passwordHash: correctHash
-            }));
-            // 同步刷新代理鉴权缓存：密码变更后旧哈希必须作废，
-            // 否则 proxy-auth 会继续用 localStorage 里的旧 proxyAuthHash，导致 /proxy/ 全部 401
-            if (window.ProxyAuth?.clearAuthCache) {
-                window.ProxyAuth.clearAuthCache();
-                localStorage.setItem('proxyAuthHash', correctHash);
-            }
-        }
-        return isValid;
+        localStorage.setItem(PASSWORD_CONFIG.localStorageKey, JSON.stringify({
+            verified: true,
+            timestamp: Date.now()
+        }));
+        return true;
     } catch (error) {
-        console.error('验证密码时出错:', error);
+        console.error('登录失败:', error);
         return false;
     }
 }
 
-// 验证状态检查
+// 验证状态检查（重构后：有有效 token 即视为已登录）
 function isPasswordVerified() {
     try {
-        if (!isPasswordProtected()) return true;
-
-        const stored = localStorage.getItem(PASSWORD_CONFIG.localStorageKey);
-        if (!stored) return false;
-
-        const { timestamp, passwordHash } = JSON.parse(stored);
-        const currentHash = window.__ENV__?.PASSWORD;
-
-        return timestamp && passwordHash === currentHash &&
-            Date.now() - timestamp < PASSWORD_CONFIG.verificationTTL;
+        return !!window.ProxyAuth.getToken();
     } catch (error) {
-        console.error('检查密码验证状态时出错:', error);
+        console.error('检查登录状态时出错:', error);
         return false;
     }
 }
@@ -116,11 +90,20 @@ async function sha256(message) {
  * 显示密码验证弹窗
  */
 function showPasswordModal() {
+    // 弹窗必须盖过一切：隐藏 loading 遮罩（z-index 200）+ 弹窗提升到 300
+    const loadingEl = document.getElementById('loading');
+    if (loadingEl) loadingEl.style.display = 'none';
     const passwordModal = document.getElementById('passwordModal');
     if (passwordModal) {
-        // 防止出现豆瓣区域滚动条
-        document.getElementById('doubanArea').classList.add('hidden');
-        document.getElementById('passwordCancelBtn').classList.add('hidden');
+        // 关键：.hidden 是 display:none !important，必须移除该类才能显示（style 内联压不过 !important）
+        passwordModal.classList.remove('hidden');
+        passwordModal.classList.add('show');
+        passwordModal.style.zIndex = '300';
+        // 防止出现豆瓣区域滚动条（元素可能缺失，做空值保护）
+        const dbArea = document.getElementById('doubanArea');
+        if (dbArea) dbArea.classList.add('hidden');
+        const cancelBtn = document.getElementById('passwordCancelBtn');
+        if (cancelBtn) cancelBtn.classList.add('hidden');
 
         // 检查是否需要强制设置密码
         if (isPasswordRequired()) {
@@ -171,6 +154,11 @@ function showPasswordModal() {
 function hidePasswordModal() {
     const passwordModal = document.getElementById('passwordModal');
     if (passwordModal) {
+        // 恢复 hidden 类（display:none !important）
+        passwordModal.classList.add('hidden');
+        passwordModal.classList.remove('show');
+        passwordModal.style.display = 'none';
+
         // 隐藏密码错误提示
         hidePasswordError();
 
@@ -219,6 +207,9 @@ async function handlePasswordSubmit() {
 
         // 触发密码验证成功事件
         document.dispatchEvent(new CustomEvent('passwordVerified'));
+
+        // 刷新页面：让全部数据请求带上新 token 重新加载
+        location.reload();
     } else {
         showPasswordError();
         if (passwordInput) {
@@ -247,5 +238,15 @@ function initPasswordProtection() {
 
 // 在页面加载完成后初始化密码保护
 document.addEventListener('DOMContentLoaded', function () {
-    initPasswordProtection();
+    // 先注册 requireLogin 兜底监听（任意未登录的 API 请求被拦截时触发弹窗）
+    document.addEventListener('requireLogin', function () {
+        try { showPasswordModal(); } catch (e) { console.error('弹窗异常:', e); }
+    });
+
+    try {
+        initPasswordProtection();
+    } catch (e) {
+        console.error('密码保护初始化异常:', e);
+        showPasswordModal();
+    }
 });

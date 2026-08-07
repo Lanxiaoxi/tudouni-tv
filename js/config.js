@@ -1,6 +1,5 @@
 // 全局常量配置
-const PROXY_URL = '/proxy/';    // 适用于 Cloudflare, Netlify (带重写), Vercel (带重写)
-// const HOPLAYER_URL = 'https://hoplayer.com/index.html';
+// 重构后：API 走同源 /api/*，由 Python 后端提供（无需 PROXY_URL）
 const SEARCH_HISTORY_KEY = 'videoSearchHistory';
 const MAX_HISTORY_ITEMS = 5;
 

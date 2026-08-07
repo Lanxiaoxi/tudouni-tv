@@ -29,31 +29,13 @@ const CAT_INFO = {
 };
 
 /* ---------- 数据获取 ---------- */
-// 从单个源拉取最新列表（无关键词，ac=videolist）
+// 从单个源拉取最新列表（重构后：调后端 /api/vodlist）
 async function fetchVodList(apiId, page) {
     try {
         const site = API_SITES[apiId];
         if (!site) return [];
-        const sep = site.api.includes('?') ? '&' : '?';
-        const apiUrl = site.api + sep + 'ac=videolist&pg=' + (page || 1);
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 15000);
-        const proxiedUrl = window.ProxyAuth && window.ProxyAuth.addAuthToProxyUrl
-            ? await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(apiUrl))
-            : PROXY_URL + encodeURIComponent(apiUrl);
-        const response = await fetch(proxiedUrl, {
-            headers: API_CONFIG.search.headers,
-            signal: controller.signal
-        });
-        clearTimeout(timer);
-        if (!response.ok) return [];
-        const data = await response.json();
-        if (!data || !data.list || !Array.isArray(data.list)) return [];
-        return data.list.map(item => ({
-            ...item,
-            source_code: apiId,
-            source_name: site.name
-        }));
+        const data = await window.Api.get('/api/vodlist', { source: apiId, pg: page || 1 });
+        return (data && data.items) || [];
     } catch (e) {
         console.warn('分类列表获取失败 [' + apiId + ']:', e.message);
         return [];
@@ -181,6 +163,8 @@ async function renderHero() {
             .sort((a, b) => parseFloat(b.vod_score || 0) - parseFloat(a.vod_score || 0));
         const pick = scored[0] || items[0];
         if (!pick) {
+            // 未登录时不重试（登录成功后页面会刷新重载数据），避免日志风暴
+            if (typeof isPasswordVerified === 'function' && !isPasswordVerified()) return;
             // 数据为空时不静默，设置加载占位并 2s 后重试一次
             heroBody.innerHTML = `<div class="hero-loading"><div class="spin"></div><span style="margin-left:10px">正在加载推荐内容...</span></div>`;
             setTimeout(renderHero, 2000);

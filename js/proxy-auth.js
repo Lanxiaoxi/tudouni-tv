@@ -1,127 +1,110 @@
 /**
- * 代理请求鉴权模块
- * 为代理请求添加基于 PASSWORD 的鉴权机制
+ * 登录态鉴权模块（重构后）
+ *
+ * 职责：
+ * 1. token 管理：登录后由后端签发，存 localStorage，7 天有效
+ * 2. fetch 拦截：所有 /api/* 请求自动附加 Authorization: Bearer <token>
+ *
+ * 替代旧版"sha256(密码) 拼 URL 参数"的鉴权方式：
+ * 密码不再注入页面源码，token 由服务器签发，修复哈希公开与时间戳绕过两个漏洞。
  */
 
-// 从全局配置获取密码哈希（如果存在）
-let cachedPasswordHash = null;
+const AUTH_STORAGE_KEY = 'authToken';
+let cachedToken = null;
 
-/**
- * 获取当前会话的密码哈希
- */
-async function getPasswordHash() {
-    if (cachedPasswordHash) {
-        return cachedPasswordHash;
-    }
-    
-    // 1. 优先从已存储的代理鉴权哈希获取
-    const storedHash = localStorage.getItem('proxyAuthHash');
-    if (storedHash) {
-        cachedPasswordHash = storedHash;
-        return storedHash;
-    }
-    
-    // 2. 尝试从密码验证状态获取（password.js 验证后存储的哈希）
-    const passwordVerified = localStorage.getItem('passwordVerified');
-    const storedPasswordHash = localStorage.getItem('passwordHash');
-    if (passwordVerified === 'true' && storedPasswordHash) {
-        localStorage.setItem('proxyAuthHash', storedPasswordHash);
-        cachedPasswordHash = storedPasswordHash;
-        return storedPasswordHash;
-    }
-    
-    // 3. 尝试从用户输入的密码生成哈希
-    const userPassword = localStorage.getItem('userPassword');
-    if (userPassword) {
-        try {
-            // 动态导入 sha256 函数
-            const { sha256 } = await import('./sha256.js');
-            const hash = await sha256(userPassword);
-            localStorage.setItem('proxyAuthHash', hash);
-            cachedPasswordHash = hash;
-            return hash;
-        } catch (error) {
-            console.error('生成密码哈希失败:', error);
-        }
-    }
-    
-    // 4. 如果用户没有设置密码，尝试使用环境变量中的密码哈希
-    if (window.__ENV__ && window.__ENV__.PASSWORD) {
-        cachedPasswordHash = window.__ENV__.PASSWORD;
-        return window.__ENV__.PASSWORD;
-    }
-    
-    return null;
+function getToken() {
+    if (cachedToken) return cachedToken;
+    try { cachedToken = localStorage.getItem(AUTH_STORAGE_KEY); } catch (e) {}
+    return cachedToken;
 }
 
-/**
- * 为代理请求URL添加鉴权参数
- */
-async function addAuthToProxyUrl(url) {
+function setToken(token) {
+    cachedToken = token;
     try {
-        const hash = await getPasswordHash();
-        if (!hash) {
-            console.warn('无法获取密码哈希，代理请求可能失败');
-            return url;
+        if (token) localStorage.setItem(AUTH_STORAGE_KEY, token);
+        else localStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch (e) {}
+}
+
+function clearToken() {
+    setToken(null);
+}
+
+// 登录：POST /api/auth，成功后保存 token
+async function login(password) {
+    const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: password })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.code !== 0 || !data.data || !data.data.token) {
+        throw new Error(data.message || '登录失败');
+    }
+    setToken(data.data.token);
+    return data.data.token;
+}
+
+// 包装 fetch：/api/* 自动附加 Authorization 头（原有调用方无需改动）
+// 未登录时拦截 API 请求：不发请求、不抛错（返回 401 响应，调用方按失败降级），
+// 并触发一次登录弹窗（节流，避免刷新风暴）
+(function () {
+    const originalFetch = window.fetch;
+    let loginPrompted = false;
+
+    function promptLogin() {
+        if (!loginPrompted) {
+            loginPrompted = true;
+            document.dispatchEvent(new CustomEvent('requireLogin'));
+            // 兜底：事件监听万一未注册，延时后直接调用全局函数弹窗
+            setTimeout(function () {
+                if (typeof window.showPasswordModal === 'function') {
+                    try { window.showPasswordModal(); } catch (e) { console.error('弹窗异常:', e); }
+                }
+            }, 60);
         }
-        
-        // 添加时间戳防止重放攻击
-        const timestamp = Date.now();
-        
-        // 检查URL是否已包含查询参数
-        const separator = url.includes('?') ? '&' : '?';
-        
-        return `${url}${separator}auth=${encodeURIComponent(hash)}&t=${timestamp}`;
-    } catch (error) {
-        console.error('添加代理鉴权失败:', error);
-        return url;
     }
-}
 
-/**
- * 验证代理请求的鉴权
- */
-function validateProxyAuth(authHash, serverPasswordHash, timestamp) {
-    if (!authHash || !serverPasswordHash) {
-        return false;
-    }
-    
-    // 验证哈希是否匹配
-    if (authHash !== serverPasswordHash) {
-        return false;
-    }
-    
-    // 验证时间戳（10分钟有效期）
-    const now = Date.now();
-    const maxAge = 10 * 60 * 1000; // 10分钟
-    
-    if (timestamp && (now - parseInt(timestamp)) > maxAge) {
-        console.warn('代理请求时间戳过期');
-        return false;
-    }
-    
-    return true;
-}
+    window.fetch = async function (input, init) {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (typeof url === 'string' && url.startsWith('/api/')) {
+            const isAuthEndpoint = url.startsWith('/api/auth') || url.startsWith('/api/health');
+            if (!isAuthEndpoint && !getToken()) {
+                // 未登录：不发请求，返回 401 响应（登录成功后刷新页面重载数据）
+                promptLogin();
+                return Promise.resolve(new Response(
+                    JSON.stringify({ code: 401, message: '需要登录' }),
+                    { status: 401, headers: { 'Content-Type': 'application/json' } }
+                ));
+            }
+            init = init || {};
+            if (!(init.headers instanceof Headers)) {
+                init.headers = new Headers(init.headers || {});
+            }
+            const token = getToken();
+            if (token && !init.headers.has('Authorization')) {
+                init.headers.set('Authorization', 'Bearer ' + token);
+            }
+            try {
+                const resp = await originalFetch.call(this, input, init);
+                // token 过期/失效：清除并提示重新登录
+                if (resp.status === 401 && !isAuthEndpoint) {
+                    clearToken();
+                    promptLogin();
+                }
+                return resp;
+            } catch (e) {
+                throw e;
+            }
+        }
+        return originalFetch.call(this, input, init);
+    };
+})();
 
-/**
- * 清除缓存的鉴权信息
- */
-function clearAuthCache() {
-    cachedPasswordHash = null;
-    localStorage.removeItem('proxyAuthHash');
-}
-
-// 监听密码变化，清除缓存
-window.addEventListener('storage', (e) => {
-    if (e.key === 'userPassword' || (window.PASSWORD_CONFIG && e.key === window.PASSWORD_CONFIG.localStorageKey)) {
-        clearAuthCache();
-    }
-});
-
-// 导出函数
+// 导出到全局（保持旧调用约定，新代码用 window.Api）
 window.ProxyAuth = {
-    addAuthToProxyUrl,
-    validateProxyAuth,
-    clearAuthCache,
-    getPasswordHash
+    login,
+    getToken,
+    setToken,
+    clearToken
 };
