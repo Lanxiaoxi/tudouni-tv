@@ -503,7 +503,7 @@ function removeCustomApi(index) {
 }
 */
 
-// toggleSettings 由 js/ui.js 定义（含密码校验与"打开设置时关闭历史面板"增强），此处不再重复定义
+// toggleSettings 由 js/core/ui.js 定义（含密码校验与"打开设置时关闭历史面板"增强），此处不再重复定义
 
 // 设置事件监听器
 function setupEventListeners() {
@@ -606,7 +606,7 @@ function resetSearchArea() {
     }
 }
 
-// 获取自定义 API 信息（已移至 js/config.js 全局，供 player.html 的 search.js 共用）
+// 获取自定义 API 信息（已移至 js/core/config.js 全局，供 player.html 的 search.js 共用）
 
 // 搜索功能 - 修改为支持多选API和多页结果
 async function search() {

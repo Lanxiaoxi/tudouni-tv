@@ -1,7 +1,7 @@
 // 真实 API 请求封装（重构后）
 // 旧版 api.js 是一个"假 API 层"：劫持 window.fetch 拦截 /api/* 请求，
 // 在浏览器本地拼 /proxy/ 转发。重构后请求真实打到 Python 后端，
-// 鉴权由 js/proxy-auth.js 的 fetch 拦截器自动附加 Authorization 头。
+// 鉴权由 js/core/proxy-auth.js 的 fetch 拦截器自动附加 Authorization 头。
 
 /**
  * 通用请求封装：请求 /api/* 并解包 {code, data, message}

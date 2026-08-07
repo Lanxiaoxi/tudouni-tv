@@ -18,7 +18,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 
     <script src="libs/tailwindcss.min.js?v=3"></script>
-    <script src="js/version-check.js?v=3"></script>
+    <script src="js/core/version-check.js?v=3"></script>
     <link rel="stylesheet" href="css/styles.css?v=3">
     <link rel="stylesheet" href="css/design.css?v=3">
 </head>
@@ -416,21 +416,21 @@
         // 保存原始 js‑sha256 实现，避免被 password.js 覆盖
         window._jsSha256 = window.sha256;
     </script>
-    <script src="js/config.js?v=3"></script>
-    <script src="js/proxy-auth.js?v=3"></script>
-    <script src="js/customer_site.js?v=3"></script>
-    <script src="js/ui.js?v=3"></script>
-    <script src="js/api.js?v=3"></script>
-    <script src="js/douban.js?v=3"></script>
-    <script src="js/password.js?v=3"></script>
-    <script src="js/search.js?v=3"></script>
-    <script src="js/app.js?v=3"></script>
-    <script src="js/discovery.js?v=3"></script>
+    <script src="js/core/config.js?v=3"></script>
+    <script src="js/core/proxy-auth.js?v=3"></script>
+    <script src="js/core/customer_site.js?v=3"></script>
+    <script src="js/core/ui.js?v=3"></script>
+    <script src="js/core/api.js?v=3"></script>
+    <script src="js/pages/douban.js?v=3"></script>
+    <script src="js/core/password.js?v=3"></script>
+    <script src="js/core/search.js?v=3"></script>
+    <script src="js/pages/app.js?v=3"></script>
+    <script src="js/pages/discovery.js?v=3"></script>
 
     <!-- PWA 注册 -->
-    <script src="js/pwa-register.js?v=3"></script>
+    <script src="js/core/pwa-register.js?v=3"></script>
 
     <!-- 添加弹窗和URL搜索参数处理脚本 -->
-    <script src="js/index-page.js?v=3"></script>
+    <script src="js/pages/index-page.js?v=3"></script>
 </body>
 </html>
