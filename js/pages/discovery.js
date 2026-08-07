@@ -133,6 +133,9 @@ async function renderRow(stripId, filterCat, page, count) {
             seen.add(k);
             return true;
         });
+        // 汇入全局数据池（供 hero 复用，保证 hero 与内容行的图片集一致）
+        if (!window.homeDataPool) window.homeDataPool = [];
+        window.homeDataPool = window.homeDataPool.concat(items);
         // 按大类过滤
         if (filterCat) {
             if (Array.isArray(filterCat)) {
@@ -192,16 +195,14 @@ async function renderHero() {
     if (!heroBody) return;
     const heroBanner = document.getElementById('heroBanner');
     try {
-        // 与内容行一致拉 2 页合并，扩大候选池（降低"首页列表恰好无海报/坏图"概率）
-        const pages = await Promise.all([1, 2].map(pg => aggregateVodList(pg, null)));
-        let items = [];
-        pages.forEach(r => { if (Array.isArray(r)) items = items.concat(r); });
+        // 复用内容行已拉取的数据池（renderRow 汇入 window.homeDataPool），
+        // hero 与内容行图片集一致，不再单独请求，避免选到行未使用的独立数据
+        const pool = window.homeDataPool || [];
         const seen = new Set();
-        items = items.filter(it => {
+        const items = [];
+        pool.forEach(it => {
             const k = it.vod_name || '';
-            if (seen.has(k)) return false;
-            seen.add(k);
-            return true;
+            if (!seen.has(k)) { seen.add(k); items.push(it); }
         });
         // 选片优先级：海报 > 评分。全量按评分降序后取第一个有海报的候选（=有海报中评分最高）；
         // 全部无海报时才退化为纯评分排序；无评分则兜底取第一条
@@ -211,9 +212,8 @@ async function renderHero() {
         if (!pick) {
             // 未登录时不重试（登录成功后页面会刷新重载数据），避免日志风暴
             if (typeof isPasswordVerified === 'function' && !isPasswordVerified()) return;
-            // 数据为空时不静默，设置加载占位并 2s 后重试一次
-            heroBody.innerHTML = `<div class="hero-loading"><div class="spin"></div><span style="margin-left:10px">正在加载推荐内容...</span></div>`;
-            setTimeout(renderHero, 2000);
+            // 行数据池为空（内容行已渲染"暂无内容"），hero 显示品牌兜底，避免无限重试
+            heroBody.innerHTML = `<h1 class="hero-title">TudouniTV</h1><p class="hero-desc">自由观影，畅享精彩</p>`;
             return;
         }
 
@@ -255,10 +255,14 @@ async function renderHero() {
     }
 }
 
-function renderHomeRows() {
-    renderRow('stripSeries', 'series', 1, 12);
-    renderRow('stripMovies', 'movie', 1, 12);
-    renderRow('stripAnime', ['anime', 'variety'], 1, 14); // 动漫·综艺行：合并动漫与综艺
+async function renderHomeRows() {
+    // 等三行数据就绪后再渲染 hero（hero 复用行数据池，与内容行图片集一致）
+    await Promise.all([
+        renderRow('stripSeries', 'series', 1, 12),
+        renderRow('stripMovies', 'movie', 1, 12),
+        renderRow('stripAnime', ['anime', 'variety'], 1, 14) // 动漫·综艺行：合并动漫与综艺
+    ]);
+    renderHero();
 }
 
 /* ---------- 分类页 ---------- */
@@ -590,7 +594,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const loadMoreBtn = document.getElementById('btnLoadMore');
     if (loadMoreBtn) loadMoreBtn.addEventListener('click', loadCategoryPage);
 
-    // 首页内容
+    // 首页内容（renderHomeRows 完成后触发 renderHero，复用行数据池）
+    const heroBodyEl = document.getElementById('heroBody');
+    if (heroBodyEl) heroBodyEl.innerHTML = `<div class="hero-loading"><div class="spin"></div><span style="margin-left:10px">正在加载推荐内容...</span></div>`;
     renderHomeRows();
-    renderHero();
 });
