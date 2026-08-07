@@ -192,7 +192,17 @@ async function renderHero() {
     if (!heroBody) return;
     const heroBanner = document.getElementById('heroBanner');
     try {
-        const items = await aggregateVodList(1, null);
+        // 与内容行一致拉 2 页合并，扩大候选池（降低"首页列表恰好无海报/坏图"概率）
+        const pages = await Promise.all([1, 2].map(pg => aggregateVodList(pg, null)));
+        let items = [];
+        pages.forEach(r => { if (Array.isArray(r)) items = items.concat(r); });
+        const seen = new Set();
+        items = items.filter(it => {
+            const k = it.vod_name || '';
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+        });
         // 选片优先级：海报 > 评分。全量按评分降序后取第一个有海报的候选（=有海报中评分最高）；
         // 全部无海报时才退化为纯评分排序；无评分则兜底取第一条
         const byScore = [...items].sort((a, b) => parseFloat(b.vod_score || 0) - parseFloat(a.vod_score || 0));
