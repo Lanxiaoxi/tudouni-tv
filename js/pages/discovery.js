@@ -115,40 +115,26 @@ function posterCardHTML(item, i, extraClass) {
     </div>`;
 }
 
-// 渲染一行内容（拉取 + 分类 + 填充），loading/失败均有兜底
-async function renderRow(stripId, filterCat, page, count) {
+// 从数据池筛选并渲染一行（数据由 renderHomeRows 统一拉取一次汇入 pool，各行不再重复请求）
+function renderRow(stripId, filterCat, count) {
     const strip = document.getElementById(stripId);
     if (!strip) return;
-    strip.innerHTML = `<div class="row-loading"><div class="spin"></div><span>加载中...</span></div>`;
+    const pool = window.homeDataPool || [];
+    let items = pool;
+    // 按大类过滤
+    if (filterCat) {
+        if (Array.isArray(filterCat)) {
+            items = items.filter(it => filterCat.includes(classifyType(it.type_name)));
+        } else {
+            items = items.filter(it => classifyType(it.type_name) === filterCat);
+        }
+    }
+    const slice = items.slice(0, count || 12);
+    if (!slice.length) {
+        strip.innerHTML = `<div class="row-empty">暂时没有内容，稍后再来看看</div>`;
+        return;
+    }
     try {
-        // 拉 2 页（40 条原始）以提高低频分类（电影/动漫）的命中率
-        const pages = await Promise.all([page || 1, (page || 1) + 1].map(pg => aggregateVodList(pg, null)));
-        let items = [];
-        pages.forEach(r => { if (Array.isArray(r)) items = items.concat(r); });
-        // 跨页去重
-        const seen = new Set();
-        items = items.filter(it => {
-            const k = it.vod_name || '';
-            if (seen.has(k)) return false;
-            seen.add(k);
-            return true;
-        });
-        // 汇入全局数据池（供 hero 复用，保证 hero 与内容行的图片集一致）
-        if (!window.homeDataPool) window.homeDataPool = [];
-        window.homeDataPool = window.homeDataPool.concat(items);
-        // 按大类过滤
-        if (filterCat) {
-            if (Array.isArray(filterCat)) {
-                items = items.filter(it => filterCat.includes(classifyType(it.type_name)));
-            } else {
-                items = items.filter(it => classifyType(it.type_name) === filterCat);
-            }
-        }
-        const slice = items.slice(0, count || 12);
-        if (!slice.length) {
-            strip.innerHTML = `<div class="row-empty">暂时没有内容，稍后再来看看</div>`;
-            return;
-        }
         strip.innerHTML = slice.map((it, i) => posterCardHTML(it, i)).join('');
     } catch (e) {
         strip.innerHTML = `<div class="row-empty">加载失败，请刷新重试</div>`;
@@ -259,12 +245,36 @@ async function renderHero() {
 }
 
 async function renderHomeRows() {
-    // 等三行数据就绪后再渲染 hero（hero 复用行数据池，与内容行图片集一致）
-    await Promise.all([
-        renderRow('stripSeries', 'series', 1, 12),
-        renderRow('stripMovies', 'movie', 1, 12),
-        renderRow('stripAnime', ['anime', 'variety'], 1, 14) // 动漫·综艺行：合并动漫与综艺
-    ]);
+    // 三行先显示 loading
+    ['stripSeries', 'stripMovies', 'stripAnime'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = `<div class="row-loading"><div class="spin"></div><span>加载中...</span></div>`;
+    });
+    try {
+        // 统一拉取一次（2 页聚合 = 4 源 × 2 页），进入 pool，三行与 hero 全部复用，无重复请求
+        const pages = await Promise.all([1, 2].map(pg => aggregateVodList(pg, null)));
+        let items = [];
+        pages.forEach(r => { if (Array.isArray(r)) items = items.concat(r); });
+        // 跨页去重
+        const seen = new Set();
+        items = items.filter(it => {
+            const k = it.vod_name || '';
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+        });
+        window.homeDataPool = items;
+        // 从 pool 按分类筛选渲染三行（同步执行，不再各自请求）
+        renderRow('stripSeries', 'series', 12);
+        renderRow('stripMovies', 'movie', 12);
+        renderRow('stripAnime', ['anime', 'variety'], 14); // 动漫·综艺行：合并动漫与综艺
+    } catch (e) {
+        console.error('首页内容加载失败:', e);
+        ['stripSeries', 'stripMovies', 'stripAnime'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = `<div class="row-empty">加载失败，请刷新重试</div>`;
+        });
+    }
     renderHero();
 }
 
