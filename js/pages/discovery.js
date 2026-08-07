@@ -339,33 +339,29 @@ async function loadCategoryPage() {
     const grid = document.getElementById('catGrid');
     const loadMoreBtn = document.getElementById('btnLoadMore');
     try {
-        // 并行拉取 4 页最新列表，再按大类过滤
-        const pages = await Promise.all([1, 2, 3, 4].map(pg => aggregateVodList(pg, null)));
-        let items = [];
-        pages.forEach(r => { items = items.concat(r); });
-        const seen = new Set();
-        items = items.filter(it => {
-            const k = (it.vod_name || '') + (it.vod_id || '');
-            if (seen.has(k)) return false;
-            seen.add(k);
-            return true;
-        });
-        // 大类过滤 + 类型标签
-        const filtered = items.filter(it => classifyType(it.type_name) === curCat);
+        // 数据来自全局 pool（后端 /api/items 一次拉取去重，首页与分类页共享）；
+        // pool 为空时（如直接深链进入分类页）先请求一次
+        if (!window.homeDataPool || !window.homeDataPool.length) {
+            const data = await window.Api.get('/api/items');
+            window.homeDataPool = (data && data.items) || [];
+        }
+        const pool = window.homeDataPool || [];
+        // 大类过滤
+        const filtered = pool.filter(it => classifyType(it.type_name) === curCat);
+        // 类型标签（首次进入时从结果提取）
         if (catFilterTypes.length === 1) {
             catFilterTypes = ['全部', ...new Set(filtered.map(i => i.type_name))].slice(0, 14);
             renderCatFilter();
         }
         const byType = curType === '全部' ? filtered : filtered.filter(i => (i.type_name || '') === curType);
-        catPool = catPool.concat(byType);
-        catPage++;
+        catPool = byType; // 数据一次到位（不再跨页累积）
 
         // 排序
         let list = [...catPool];
         if (curSort === '高分') list.sort((a, b) => parseFloat(b.vod_score || 0) - parseFloat(a.vod_score || 0));
         else if (curSort === '最新') list.sort((a, b) => String(b.vod_year || '').localeCompare(String(a.vod_year || '')));
 
-        // 渲染当前可见部分（每次加载 +24）
+        // 前端分页：每次显示 +24，纯本地 slice，无网络请求
         const visible = list.slice(0, catPage * 24);
         grid.innerHTML = visible.length
             ? visible.map((it, i) => posterCardHTML(it, i)).join('')
@@ -376,6 +372,7 @@ async function loadCategoryPage() {
         loadMoreBtn.style.display = hasMore ? '' : 'none';
         loadMoreBtn.disabled = false;
         loadMoreBtn.textContent = '加载更多';
+        catPage++; // 为下一次"加载更多"扩大可见范围做准备
     } catch (e) {
         console.error('分类加载失败:', e);
         grid.innerHTML = `<div class="row-empty" style="grid-column:1/-1">加载失败，请刷新重试</div>`;

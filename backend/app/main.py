@@ -98,9 +98,12 @@ async def api_vodlist(
 
 
 @app.get("/api/items")
-async def api_items(_: None = Depends(auth.require_token)):
-    """首页数据项：后端完成拉取/去重，一次返回全量 items，前端只做分类与渲染。"""
-    data = await home.get_home()
+async def api_items(
+    pg: int = Query(4, ge=1, le=10),
+    _: None = Depends(auth.require_token),
+):
+    """数据项：后端完成拉取/去重，一次返回全量 items（首页与分类页共享同一份数据）。"""
+    data = await home.get_home(pg)
     return {"code": 0, "data": data, "message": "ok"}
 
 
