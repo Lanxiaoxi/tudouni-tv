@@ -193,10 +193,11 @@ async function renderHero() {
     const heroBanner = document.getElementById('heroBanner');
     try {
         const items = await aggregateVodList(1, null);
-        // 优先按评分排序，否则直接取第一条；不要求评分 > 0
-        const scored = items.filter(i => parseFloat(i.vod_score || 0) > 0)
-            .sort((a, b) => parseFloat(b.vod_score || 0) - parseFloat(a.vod_score || 0));
-        const pick = scored[0] || items[0];
+        // 选片优先级：海报 > 评分。全量按评分降序后取第一个有海报的候选（=有海报中评分最高）；
+        // 全部无海报时才退化为纯评分排序；无评分则兜底取第一条
+        const byScore = [...items].sort((a, b) => parseFloat(b.vod_score || 0) - parseFloat(a.vod_score || 0));
+        const hasCover = i => i.vod_pic && String(i.vod_pic).startsWith('http');
+        const pick = byScore.find(hasCover) || byScore.find(i => !hasCover(i)) || items[0];
         if (!pick) {
             // 未登录时不重试（登录成功后页面会刷新重载数据），避免日志风暴
             if (typeof isPasswordVerified === 'function' && !isPasswordVerified()) return;
