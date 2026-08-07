@@ -17,6 +17,18 @@
 
     <script src="libs/tailwindcss.min.js?v=3"></script>
     <script src="js/core/version-check.js?v=3"></script>
+    <script>
+        // goBack 兜底：player.js 正常加载时其定义会覆盖本兜底；
+        // 若 player.js 执行失败（如 localStorage 异常），返回按钮也不报错
+        window.goBack = window.goBack || function (e) {
+            if (e) e.preventDefault();
+            try {
+                var u = new URLSearchParams(window.location.search).get('returnUrl');
+                if (u) { window.location.href = decodeURIComponent(u); return; }
+            } catch (err) {}
+            window.history.back();
+        };
+    </script>
     <link rel="stylesheet" href="css/styles.css?v=3">
     <link rel="stylesheet" href="css/player.css?v=3">
     <link rel="stylesheet" href="css/design.css?v=9">
