@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import re
 
 import httpx
 from fastapi import HTTPException
@@ -16,18 +17,19 @@ from .sites import LIST_PATH, parse_sources
 _client = httpx.AsyncClient(follow_redirects=True, timeout=REQUEST_TIMEOUT)
 
 # 与前端 discovery.js classifyType 保持一致
-_CAT_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "anime": ("动漫", "动画", "番剧"),
-    "variety": ("综艺", "真人秀", "选秀", "音乐节目"),
-    "series": ("剧", "连续剧", "电视剧", "短剧", "剧场"),
+# series 用"剧(?![情片])"排除"剧情片/喜剧片"等电影类型误入剧集
+_CAT_PATTERNS: dict[str, re.Pattern] = {
+    "anime": re.compile(r"动漫|动画|番剧"),
+    "variety": re.compile(r"综艺|真人秀|选秀|音乐节目"),
+    "series": re.compile(r"剧(?![情片])"),
 }
 _VALID_CATS = {"movie", "series", "anime", "variety"}
 
 
 def classify_type(type_name: str | None) -> str:
     t = type_name or ""
-    for cat, kws in _CAT_KEYWORDS.items():
-        if any(k in t for k in kws):
+    for cat, pat in _CAT_PATTERNS.items():
+        if pat.search(t):
             return cat
     return "movie"
 

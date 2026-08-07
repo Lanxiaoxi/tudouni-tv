@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, detail, proxy, search, vodlist
+from . import auth, detail, home, proxy, search, vodlist
 from .config import FRONTEND_DIR, SERVE_STATIC
 
 logging.basicConfig(
@@ -94,6 +94,13 @@ async def api_vodlist(
     _: None = Depends(auth.require_token),
 ):
     data = await vodlist.get_vodlist(cat, source, api_url, pg)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.get("/api/home")
+async def api_home(_: None = Depends(auth.require_token)):
+    """首页聚合：后端完成拉取/去重/分组/hero 选片，一次返回，前端只渲染。"""
+    data = await home.get_home()
     return {"code": 0, "data": data, "message": "ok"}
 
 

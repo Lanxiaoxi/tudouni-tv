@@ -13,11 +13,12 @@ function esc(s) {
 }
 
 // 按 type_name 归类：动漫/综艺/剧集/电影
+// series 用"剧(?![情片])"排除"剧情片/喜剧片"等电影类型误入剧集
 function classifyType(typeName) {
     const t = typeName || '';
     if (/(动漫|动画|番剧)/.test(t)) return 'anime';
     if (/(综艺|真人秀|选秀|音乐节目)/.test(t)) return 'variety';
-    if (/(剧|连续剧|电视剧|短剧|剧场)/.test(t)) return 'series';
+    if (/(剧(?![情片]))/.test(t)) return 'series';
     return 'movie';
 }
 
@@ -115,7 +116,7 @@ function posterCardHTML(item, i, extraClass) {
     </div>`;
 }
 
-// 从数据池筛选并渲染一行（数据由 renderHomeRows 统一拉取一次汇入 pool，各行不再重复请求）
+// 从数据池筛选并渲染一行（数据由后端 /api/home 统一拉取去重，前端保留分类业务）
 function renderRow(stripId, filterCat, count) {
     const strip = document.getElementById(stripId);
     if (!strip) return;
@@ -180,33 +181,31 @@ function renderHeroArt(heroBanner, pick, idx) {
     }
 }
 
-async function renderHero() {
+// hero 渲染（数据从 homeDataPool 选片：海报 > 评分，分类/选片业务保留前端）
+function renderHero() {
     const heroBody = document.getElementById('heroBody');
     if (!heroBody) return;
     const heroBanner = document.getElementById('heroBanner');
+    const pool = window.homeDataPool || [];
+    // 防御性去重（后端已去重，此处兜底）
+    const seen = new Set();
+    const items = [];
+    pool.forEach(it => {
+        const k = it.vod_name || '';
+        if (!seen.has(k)) { seen.add(k); items.push(it); }
+    });
+    // 选片优先级：海报 > 评分。全量按评分降序后取第一个有海报的候选（=有海报中评分最高）；
+    // 全部无海报时才退化为纯评分排序；无评分则兜底取第一条
+    const byScore = [...items].sort((a, b) => parseFloat(b.vod_score || 0) - parseFloat(a.vod_score || 0));
+    const hasCover = i => i.vod_pic && String(i.vod_pic).startsWith('http');
+    const pick = byScore.find(hasCover) || byScore.find(i => !hasCover(i)) || items[0];
+    if (!pick) {
+        // 未登录时不显示兜底文案（登录成功后页面会刷新重载数据），避免日志风暴
+        if (typeof isPasswordVerified === 'function' && !isPasswordVerified()) return;
+        heroBody.innerHTML = `<h1 class="hero-title">TudouniTV</h1><p class="hero-desc">自由观影，畅享精彩</p>`;
+        return;
+    }
     try {
-        // 复用内容行已拉取的数据池（renderRow 汇入 window.homeDataPool），
-        // hero 与内容行图片集一致，不再单独请求，避免选到行未使用的独立数据
-        const pool = window.homeDataPool || [];
-        const seen = new Set();
-        const items = [];
-        pool.forEach(it => {
-            const k = it.vod_name || '';
-            if (!seen.has(k)) { seen.add(k); items.push(it); }
-        });
-        // 选片优先级：海报 > 评分。全量按评分降序后取第一个有海报的候选（=有海报中评分最高）；
-        // 全部无海报时才退化为纯评分排序；无评分则兜底取第一条
-        const byScore = [...items].sort((a, b) => parseFloat(b.vod_score || 0) - parseFloat(a.vod_score || 0));
-        const hasCover = i => i.vod_pic && String(i.vod_pic).startsWith('http');
-        const pick = byScore.find(hasCover) || byScore.find(i => !hasCover(i)) || items[0];
-        if (!pick) {
-            // 未登录时不重试（登录成功后页面会刷新重载数据），避免日志风暴
-            if (typeof isPasswordVerified === 'function' && !isPasswordVerified()) return;
-            // 行数据池为空（内容行已渲染"暂无内容"），hero 显示品牌兜底，避免无限重试
-            heroBody.innerHTML = `<h1 class="hero-title">TudouniTV</h1><p class="hero-desc">自由观影，畅享精彩</p>`;
-            return;
-        }
-
         // 背景海报（渐变兜底 + 真实封面）
         renderHeroArt(heroBanner, pick, 0);
 
@@ -252,20 +251,12 @@ async function renderHomeRows() {
         if (el) el.innerHTML = `<div class="row-loading"><div class="spin"></div><span>加载中...</span></div>`;
     });
     try {
-        // 统一拉取一次（2 页聚合 = 4 源 × 2 页），进入 pool，三行与 hero 全部复用，无重复请求
-        const pages = await Promise.all([1, 2].map(pg => aggregateVodList(pg, null)));
-        let items = [];
-        pages.forEach(r => { if (Array.isArray(r)) items = items.concat(r); });
-        // 跨页去重
-        const seen = new Set();
-        items = items.filter(it => {
-            const k = it.vod_name || '';
-            if (seen.has(k)) return false;
-            seen.add(k);
-            return true;
-        });
+        // 后端 /api/home 一次完成"拉取 4 源 × 2 页 + 去重"（无状态通用）；
+        // 前端从 pool 做分类分组与 hero 选片（业务逻辑保留前端，增删种类不动后端）
+        const data = await window.Api.get('/api/home');
+        const items = (data && data.items) || [];
+        if (!items.length) throw new Error('首页数据为空');
         window.homeDataPool = items;
-        // 从 pool 按分类筛选渲染三行（同步执行，不再各自请求）
         renderRow('stripSeries', 'series', 12);
         renderRow('stripMovies', 'movie', 12);
         renderRow('stripAnime', ['anime', 'variety'], 14); // 动漫·综艺行：合并动漫与综艺
