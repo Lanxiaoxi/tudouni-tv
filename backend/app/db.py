@@ -409,6 +409,18 @@ def count_videos() -> int:
         conn.close()
 
 
+def cleanup_videos(stale_days: int = 30) -> int:
+    """清理 N 天未更新的残留行（保持 videos 表为「最新内容索引」语义）。返回删除条数。"""
+    cutoff = time.time() - stale_days * 86400
+    conn = get_conn()
+    try:
+        cur = conn.execute("DELETE FROM videos WHERE timestamp < ?", (int(cutoff),))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
 def _video_row(r: sqlite3.Row) -> dict:
     """转成与上游 list 条目兼容的 dict（字段名对齐 vod_*，供前端直接消费）。"""
     return {

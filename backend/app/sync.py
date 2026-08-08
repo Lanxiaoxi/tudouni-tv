@@ -2,6 +2,7 @@
 
 - 遍历所有普通源（排除 adult），每源拉 SYNC_PAGES_PER_SOURCE 页（首页即最新内容）
 - 按 (source, vod_id) upsert：已存在更新、新出现插入
+- 同步完成后清理 SYNC_STALE_DAYS 天未更新的残留行（保持「最新内容索引」语义）
 - 单源失败跳过不影响其他源；源站挂掉时表里旧数据保留，服务仍可用
 - 由 main.py 的 asyncio 后台任务按 SYNC_INTERVAL_HOURS 间隔调用
 """
@@ -9,16 +10,16 @@
 import asyncio
 
 from . import db
-from .config import SYNC_PAGES_PER_SOURCE
+from .config import SYNC_PAGES_PER_SOURCE, SYNC_STALE_DAYS
 from .sites import SITES
 from .vodlist import _fetch_list
 
 
 async def sync_all_sources(pages: int | None = None) -> dict:
-    """同步全部普通源到 videos 表。返回统计信息 {sources, items, failed}。"""
+    """同步全部普通源到 videos 表，并清理过期残留。返回统计信息 {sources, items, failed, cleaned}。"""
     pages = pages or SYNC_PAGES_PER_SOURCE
     sources = [(k, v) for k, v in SITES.items() if not v["adult"]]
-    stats: dict = {"sources": len(sources), "items": 0, "failed": []}
+    stats: dict = {"sources": len(sources), "items": 0, "failed": [], "cleaned": 0}
 
     async def sync_one(key: str, site: dict) -> int:
         total = 0
@@ -51,4 +52,6 @@ async def sync_all_sources(pages: int | None = None) -> dict:
 
     results = await asyncio.gather(*[sync_one(k, v) for k, v in sources])
     stats["items"] = sum(results)
+    # 清理 N 天未更新的残留（保持表为最新索引，防历史残留污染首页）
+    stats["cleaned"] = db.cleanup_videos(SYNC_STALE_DAYS)
     return stats

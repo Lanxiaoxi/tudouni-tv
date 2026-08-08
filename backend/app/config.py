@@ -32,6 +32,7 @@ MAX_QUERY_LENGTH = int(os.getenv("MAX_QUERY_LENGTH", "100"))
 # 资源镜像表同步（videos 表定时从资源站拉取）
 SYNC_INTERVAL_HOURS = float(os.getenv("SYNC_INTERVAL_HOURS", "24"))  # 同步间隔（小时），默认每天 1 次
 SYNC_PAGES_PER_SOURCE = int(os.getenv("SYNC_PAGES_PER_SOURCE", "10"))  # 每个源拉取页数（约 20-30 条/页）
+SYNC_STALE_DAYS = int(os.getenv("SYNC_STALE_DAYS", "30"))  # 同步时清理 N 天未更新的残留行
 
 # TTL 缓存（内存，服务搜索/详情等实时端点）
 TTL_CACHE_MAX_ITEMS = int(os.getenv("TTL_CACHE_MAX_ITEMS", "200"))  # 缓存条数上限（LRU 淘汰）

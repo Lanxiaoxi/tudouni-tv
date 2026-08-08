@@ -116,5 +116,25 @@ async def aggregated_search(
     items = _dedup(items)
     result = {"total": len(items), "items": items, "page": page}
     if not is_custom:
+        # 按需填充：实时兜底结果写入 videos 表（用户搜过的片进库，下次直接本地命中）
+        try:
+            rows = [
+                {
+                    "source": it.get("source_code", ""),
+                    "source_name": it.get("source_name"),
+                    "vod_id": str(it.get("vod_id") or ""),
+                    "title": str(it.get("vod_name") or ""),
+                    "type_name": it.get("type_name"),
+                    "pic": it.get("vod_pic"),
+                    "remarks": it.get("vod_remarks"),
+                    "area": it.get("vod_area"),
+                    "year": it.get("vod_year"),
+                    "play_url": it.get("vod_play_url"),
+                }
+                for it in items
+            ]
+            db.upsert_videos(rows)
+        except Exception:
+            pass  # 入库失败不影响搜索返回
         cache_set(cache_key, result, SEARCH_TTL_SECONDS)
     return result
