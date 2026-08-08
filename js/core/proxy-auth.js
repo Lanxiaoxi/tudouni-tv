@@ -10,6 +10,7 @@
  */
 
 const AUTH_STORAGE_KEY = 'authToken';
+const USERNAME_STORAGE_KEY = 'currentUsername';
 let cachedToken = null;
 
 function getToken() {
@@ -30,6 +31,18 @@ function clearToken() {
     setToken(null);
 }
 
+// 记住当前登录用户名（用于头像显示，刷新后仍可恢复）
+function setCurrentUsername(username) {
+    try {
+        if (username) localStorage.setItem(USERNAME_STORAGE_KEY, String(username));
+        else localStorage.removeItem(USERNAME_STORAGE_KEY);
+    } catch (e) {}
+}
+
+function getCurrentUsername() {
+    try { return localStorage.getItem(USERNAME_STORAGE_KEY) || ''; } catch (e) { return ''; }
+}
+
 // 登录：POST /api/auth/login，成功后保存 token
 async function login(username, password) {
     const res = await fetch('/api/auth/login', {
@@ -42,6 +55,7 @@ async function login(username, password) {
         throw new Error(data.message || '登录失败');
     }
     setToken(data.data.token);
+    setCurrentUsername(data.data.username);
     return data.data;
 }
 
@@ -57,6 +71,7 @@ async function register(username, password) {
         throw new Error(data.message || '注册失败');
     }
     setToken(data.data.token);
+    setCurrentUsername(data.data.username);
     return data.data;
 }
 
@@ -69,6 +84,7 @@ async function logout() {
         }
     } catch (e) {}
     clearToken();
+    setCurrentUsername('');
 }
 
 // 包装 fetch：/api/* 自动附加 Authorization 头（原有调用方无需改动）
@@ -134,5 +150,7 @@ window.ProxyAuth = {
     logout,
     getToken,
     setToken,
-    clearToken
+    clearToken,
+    getCurrentUsername,
+    setCurrentUsername
 };

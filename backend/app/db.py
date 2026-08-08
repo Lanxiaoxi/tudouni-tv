@@ -43,6 +43,7 @@ def init_db() -> None:
                 username      TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 salt          TEXT NOT NULL,
+                role          TEXT NOT NULL DEFAULT 'user',
                 settings      TEXT NOT NULL DEFAULT '{}',
                 created_at    INTEGER NOT NULL
             );
@@ -80,6 +81,11 @@ def init_db() -> None:
             """
         )
         conn.commit()
+        # 存量库迁移：早期 users 表没有 role 列，补上（幂等）
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+        if "role" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+            conn.commit()
     finally:
         conn.close()
 

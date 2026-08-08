@@ -23,6 +23,7 @@ async def get_me(user_id: int = Depends(require_token)) -> dict:
     return {
         "id": user["id"],
         "username": user["username"],
+        "role": user["role"],
         "created_at": user["created_at"],
         "settings": settings,
     }

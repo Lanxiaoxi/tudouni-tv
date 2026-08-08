@@ -228,6 +228,114 @@ function switchAuthTab(mode) {
     if (err) err.classList.add('hidden');
 }
 
+/* ---------- 用户菜单（头像下拉） ---------- */
+
+// 取用户名首字符（中文取原字，英文取大写首字母）
+function userInitial(name) {
+    if (!name) return '客';
+    return name.trim().charAt(0).toUpperCase();
+}
+
+// 刷新后更新头像与菜单显示
+async function updateUserAvatar() {
+    const avatar = document.getElementById('userAvatar');
+    let username = window.ProxyAuth ? window.ProxyAuth.getCurrentUsername() : '';
+    // 本地无用户名时从服务端兜底获取（旧登录态/换浏览器）
+    if (!username && window.ProxyAuth && window.ProxyAuth.getToken()) {
+        try {
+            const me = await window.Api.get('/api/me');
+            if (me && me.username) {
+                username = me.username;
+                window.ProxyAuth.setCurrentUsername(username);
+            }
+        } catch (e) {}
+    }
+    const loggedIn = !!(window.ProxyAuth && window.ProxyAuth.getToken());
+    const nameEl = document.getElementById('userMenuName');
+    const subEl = document.getElementById('userMenuSub');
+    const menuAvatar = document.getElementById('userMenuAvatar');
+    if (avatar) {
+        avatar.textContent = userInitial(username);
+        avatar.title = username || '游客';
+    }
+    if (menuAvatar) menuAvatar.textContent = userInitial(username);
+    if (nameEl) nameEl.textContent = username || '游客';
+    if (subEl) subEl.textContent = loggedIn ? '已登录' : '未登录';
+}
+
+// 切换头像下拉菜单显示
+function toggleUserMenu(event) {
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    const menu = document.getElementById('userMenu');
+    if (!menu) return;
+    // 弹窗显示必须用 class 切换（.hidden{display:none !important} 压过内联 style）
+    menu.classList.toggle('hidden');
+    if (!menu.classList.contains('hidden')) updateUserAvatar();
+}
+
+// 显示个人信息弹窗
+async function showUserProfile() {
+    // 关闭下拉菜单
+    const menu = document.getElementById('userMenu');
+    if (menu) menu.classList.add('hidden');
+    const modal = document.getElementById('profileModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.classList.add('show');
+    try {
+        const me = await window.Api.get('/api/me');
+        const username = (me && me.username) || window.ProxyAuth.getCurrentUsername() || '游客';
+        const createdAt = me && me.created_at ? me.created_at : '-';
+        const userId = me && me.id !== undefined ? me.id : '-';
+        // 用户类型：从数据库 role 字段读取，映射中文显示（默认普通用户）
+        const ROLE_MAP = { user: '普通用户', admin: '管理员', vip: 'VIP 用户' };
+        const roleCode = (me && me.role) || 'user';
+        const roleText = ROLE_MAP[roleCode] || '普通用户';
+        // 格式化注册时间（后端存的是秒级时间戳）
+        let createdText = createdAt;
+        if (typeof createdAt === 'number' || /^\d+$/.test(String(createdAt))) {
+            try {
+                const d = new Date(Number(createdAt) * 1000);
+                createdText = isNaN(d.getTime()) ? createdAt : d.toLocaleString('zh-CN', { hour12: false });
+            } catch (e) {}
+        }
+        document.getElementById('profileUsername').textContent = username;
+        document.getElementById('profileBigAvatar').textContent = userInitial(username);
+        document.getElementById('profileUserId').textContent = String(userId);
+        document.getElementById('profileCreatedAt').textContent = String(createdText);
+        document.getElementById('profileRole').textContent = roleText;
+    } catch (e) {
+        document.getElementById('profileUsername').textContent = window.ProxyAuth.getCurrentUsername() || '游客';
+    }
+}
+
+// 关闭个人信息弹窗
+function hideProfileModal() {
+    const modal = document.getElementById('profileModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('show');
+    }
+}
+
+// 退出登录
+async function logoutUser() {
+    const menu = document.getElementById('userMenu');
+    if (menu) menu.classList.add('hidden');
+    if (!confirm('确定要退出登录吗？')) return;
+    if (window.ProxyAuth && typeof window.ProxyAuth.logout === 'function') {
+        try { await window.ProxyAuth.logout(); } catch (e) {}
+    }
+    // 清理本地登录标记
+    try { localStorage.removeItem('passwordVerified'); } catch (e) {}
+    try { localStorage.removeItem('currentUsername'); } catch (e) {}
+    // 退出后刷新页面，触发登录弹窗
+    window.location.reload();
+}
+
 /**
  * 初始化登录系统
  */
@@ -243,6 +351,19 @@ document.addEventListener('DOMContentLoaded', function () {
     // 先注册 requireLogin 兜底监听（任意未登录的 API 请求被拦截时触发弹窗）
     document.addEventListener('requireLogin', function () {
         try { showPasswordModal(); } catch (e) { console.error('弹窗异常:', e); }
+    });
+
+    // 更新头像显示（登录用户名首字符）
+    try { updateUserAvatar(); } catch (e) { console.error('更新头像失败:', e); }
+
+    // 点击页面其他区域关闭用户菜单
+    document.addEventListener('click', function (event) {
+        const menu = document.getElementById('userMenu');
+        const avatar = document.getElementById('userAvatar');
+        if (menu && !menu.classList.contains('hidden') &&
+            !menu.contains(event.target) && avatar && !avatar.contains(event.target)) {
+            menu.classList.add('hidden');
+        }
     });
 
     try {
