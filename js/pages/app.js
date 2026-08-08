@@ -816,7 +816,7 @@ async function search() {
             const typeName = item.type_name ? String(item.type_name).replace(/</g, '&lt;') : '';
             const remarks = item.vod_remarks ? String(item.vod_remarks).replace(/</g, '&lt;') : '';
             const sourceName = item.source_name ? String(item.source_name).replace(/</g, '&lt;').replace(/"/g, '&quot;') : '';
-            const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
+            const hasCover = item.vod_pic && (item.vod_pic.startsWith('http') || item.vod_pic.startsWith('/'));
             const coverUrl = hasCover ? item.vod_pic.replace(/"/g, '&quot;') : '';
 
             // 渐变占位艺术（无封面时兜底）

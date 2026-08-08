@@ -17,6 +17,8 @@
 """
 
 import asyncio
+import hashlib
+import os
 import time
 
 from . import db
@@ -31,6 +33,27 @@ from .vodlist import _fetch_list
 
 # 连续空页达到该值即提前退出（源站到底或异常）
 _EMPTY_BREAK_STREAK = 2
+
+# 封面本地化：covers/ 目录（仓库根）按 URL 哈希缓存封面图
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_COVERS_DIR = os.path.join(_BACKEND_DIR, "..", "covers")
+_COVER_EXTS = (".jpg", ".png", ".webp")
+
+
+def pic_local(url: str | None) -> str | None:
+    """封面 URL 本地化：covers/ 已有该 URL 的缓存文件则返回本地路径，否则原样返回 URL。
+
+    新封面先存 URL（download_covers.py 补齐后，下次同步自动转为本地路径），
+    避免同步流程内串行下载拖慢拉取。
+    """
+    if not url or not str(url).startswith("http"):
+        return url
+    name = hashlib.sha256(str(url).encode()).hexdigest()[:16]
+    for ext in _COVER_EXTS:
+        p = os.path.join(_COVERS_DIR, name + ext)
+        if os.path.exists(p) and os.path.getsize(p) > 0:
+            return f"/covers/{name}{ext}"
+    return url
 
 
 def _build_page_set() -> list[int]:
@@ -89,7 +112,7 @@ async def sync_all_sources(pages: int | None = None) -> dict:
                             "vod_id": str(it.get("vod_id") or ""),
                             "title": str(it.get("vod_name") or ""),
                             "type_name": it.get("type_name"),
-                            "pic": it.get("vod_pic"),
+                            "pic": pic_local(it.get("vod_pic")),
                             "remarks": it.get("vod_remarks"),
                             "area": it.get("vod_area"),
                             "year": it.get("vod_year"),

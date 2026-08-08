@@ -102,7 +102,7 @@ async function renderRelated() {
         }
         box.innerHTML = slice.map((it, i) => {
             const safeName = ppEsc(it.vod_name || '未知视频');
-            const cover = (it.vod_pic && it.vod_pic.startsWith('http')) ? it.vod_pic : '';
+            const cover = (it.vod_pic && (it.vod_pic.startsWith('http') || it.vod_pic.startsWith('/'))) ? it.vod_pic : '';
             const score = it.vod_score ? ppEsc(it.vod_score) : '';
             const year = it.vod_year ? ppEsc(it.vod_year) : '';
             const typeName = it.type_name ? ppEsc(it.type_name) : '';

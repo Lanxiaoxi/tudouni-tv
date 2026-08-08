@@ -24,6 +24,9 @@ __pycache__/
 backend/data.db
 backend/data.db-*
 
+# 封面图片缓存（运行时下载，不进仓库）
+covers/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

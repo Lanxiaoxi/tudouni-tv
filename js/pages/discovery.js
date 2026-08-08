@@ -97,7 +97,7 @@ function posterCardHTML(item, i, extraClass) {
     const year = item.vod_year ? esc(item.vod_year) : '';
     const typeName = item.type_name ? esc(item.type_name) : '';
     const remarks = item.vod_remarks ? esc(item.vod_remarks) : '';
-    const cover = (item.vod_pic && item.vod_pic.startsWith('http')) ? item.vod_pic : '';
+    const cover = (item.vod_pic && (item.vod_pic.startsWith('http') || item.vod_pic.startsWith('/'))) ? item.vod_pic : '';
     const sourceName = item.source_name ? esc(item.source_name) : '';
 
     return `
@@ -166,7 +166,7 @@ function renderHeroArt(heroBanner, pick, idx) {
     // SVG 渐变兜底（始终存在，img 盖在其上）
     heroBanner.insertAdjacentHTML('afterbegin', heroArtSvg(pick, idx));
     // 有封面则叠加真实海报；加载失败移除后露出渐变
-    const cover = (pick.vod_pic && pick.vod_pic.startsWith('http')) ? pick.vod_pic : '';
+    const cover = (pick.vod_pic && (pick.vod_pic.startsWith('http') || pick.vod_pic.startsWith('/'))) ? pick.vod_pic : '';
     if (cover) {
         const img = document.createElement('img');
         img.className = 'hero-art';
@@ -197,7 +197,7 @@ function renderHero() {
     // 选片优先级：海报 > 评分。全量按评分降序后取第一个有海报的候选（=有海报中评分最高）；
     // 全部无海报时才退化为纯评分排序；无评分则兜底取第一条
     const byScore = [...items].sort((a, b) => parseFloat(b.vod_score || 0) - parseFloat(a.vod_score || 0));
-    const hasCover = i => i.vod_pic && String(i.vod_pic).startsWith('http');
+    const hasCover = i => i.vod_pic && (String(i.vod_pic).startsWith('http') || String(i.vod_pic).startsWith('/'));
     const pick = byScore.find(hasCover) || byScore.find(i => !hasCover(i)) || items[0];
     if (!pick) {
         // 未登录时不显示兜底文案（登录成功后页面会刷新重载数据），避免日志风暴
