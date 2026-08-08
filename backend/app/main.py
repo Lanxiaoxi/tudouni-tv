@@ -9,13 +9,13 @@ import logging
 import mimetypes
 import time
 
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, detail, home, proxy, search, vodlist
+from . import auth, db, detail, home, proxy, search, userdata, vodlist
 
 # 修复 Windows 上 Python mimetypes 把 .js 映射成 text/plain 的问题
 # （浏览器会拒绝执行 text/plain 的 <script>，导致前端 JS 全部不生效）
@@ -30,6 +30,9 @@ logging.basicConfig(
 logger = logging.getLogger("libretv")
 
 app = FastAPI(title="LibreTV API", version="0.1.0")
+
+# 初始化 SQLite（幂等）
+db.init_db()
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,13 +73,94 @@ async def health():
     return {"code": 0, "data": {"status": "ok"}, "message": "ok"}
 
 
-@app.post("/api/auth")
-async def api_login(body: dict):
+@app.post("/api/auth/register")
+async def api_register(body: dict):
+    username = (body or {}).get("username")
     password = (body or {}).get("password")
-    if not isinstance(password, str) or not password:
-        raise FastAPIHTTPException(400, "缺少密码")
-    result = await auth.login(password)
+    if not isinstance(username, str) or not isinstance(password, str):
+        raise FastAPIHTTPException(400, "缺少用户名或密码")
+    result = await auth.register(username, password)
     return {"code": 0, "data": result, "message": "ok"}
+
+
+@app.post("/api/auth/login")
+async def api_login(body: dict):
+    username = (body or {}).get("username")
+    password = (body or {}).get("password")
+    if not isinstance(username, str) or not isinstance(password, str):
+        raise FastAPIHTTPException(400, "缺少用户名或密码")
+    result = await auth.login(username, password)
+    return {"code": 0, "data": result, "message": "ok"}
+
+
+@app.post("/api/auth/logout")
+async def api_logout(authorization: str | None = Header(default=None)):
+    token = authorization[7:].strip() if authorization and authorization.startswith("Bearer ") else ""
+    if token:
+        await auth.logout(token)
+    return {"code": 0, "data": {"ok": True}, "message": "ok"}
+
+
+# ---------- 用户数据（按 user_id 隔离） ----------
+
+@app.get("/api/me")
+async def api_me(user_id: int = Depends(auth.require_token)):
+    data = await userdata.get_me(user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.put("/api/me/settings")
+async def api_put_settings(body: dict, user_id: int = Depends(auth.require_token)):
+    data = await userdata.put_settings(body, user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.get("/api/history")
+async def api_history(limit: int = Query(50, ge=1, le=200), user_id: int = Depends(auth.require_token)):
+    data = await userdata.get_history(limit, user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.put("/api/history")
+async def api_put_history(body: dict, user_id: int = Depends(auth.require_token)):
+    data = await userdata.put_history(body, user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.delete("/api/history")
+async def api_delete_history(user_id: int = Depends(auth.require_token)):
+    data = await userdata.delete_history(user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.get("/api/comments")
+async def api_comments(title: str | None = None, user_id: int = Depends(auth.require_token)):
+    data = await userdata.get_comments(title, user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.post("/api/comments")
+async def api_post_comment(body: dict, user_id: int = Depends(auth.require_token)):
+    data = await userdata.post_comment(body, user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.get("/api/search-history")
+async def api_search_history(limit: int = Query(50, ge=1, le=200), user_id: int = Depends(auth.require_token)):
+    data = await userdata.get_search_history(limit, user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.post("/api/search-history")
+async def api_post_search_history(body: dict, user_id: int = Depends(auth.require_token)):
+    data = await userdata.post_search_history(body, user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.delete("/api/search-history")
+async def api_delete_search_history(user_id: int = Depends(auth.require_token)):
+    data = await userdata.delete_search_history(user_id)
+    return {"code": 0, "data": data, "message": "ok"}
 
 
 @app.get("/api/search")

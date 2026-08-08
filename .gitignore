@@ -20,6 +20,10 @@ __pycache__/
 *.pyc
 .uv/
 
+# SQLite 数据库（多用户数据，不进仓库）
+backend/data.db
+backend/data.db-*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
