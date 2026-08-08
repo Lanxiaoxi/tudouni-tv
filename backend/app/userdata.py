@@ -1,4 +1,4 @@
-"""用户数据端点：/api/me、/api/me/settings、/api/history、/api/comments、/api/search-history。
+"""用户数据端点：/api/me、/api/me/settings、/api/history、/api/search-history。
 
 所有端点按 user_id 隔离（require_token 依赖注入）。读取类聚合端点
 （/api/items、/api/search 等）不在此文件，仍保持只读透传。
@@ -76,25 +76,16 @@ async def delete_history(user_id: int = Depends(require_token)) -> dict:
     return {"ok": True}
 
 
-# ---------- 短评 ----------
-
-async def get_comments(title: str | None = None, user_id: int = Depends(require_token)) -> dict:
-    items = db.get_comments(user_id, title)
-    return {"items": items, "total": len(items)}
-
-
-async def post_comment(body: dict, user_id: int = Depends(require_token)) -> dict:
-    title = (body or {}).get("title")
-    content = (body or {}).get("content")
-    if not title or not content:
-        raise HTTPException(400, "缺少标题或评论内容")
-    content = str(content).strip()
-    if not content:
-        raise HTTPException(400, "评论内容不能为空")
-    if len(content) > 2000:
-        raise HTTPException(400, "评论内容过长")
-    cid = db.add_comment(user_id, str(title), content)
-    return {"id": cid, "ok": True}
+async def delete_history_item(
+    vod_id: str | None = None,
+    source: str | None = None,
+    title: str | None = None,
+    user_id: int = Depends(require_token),
+) -> dict:
+    if not (vod_id or title):
+        raise HTTPException(400, "缺少 vod_id 或 title 参数")
+    removed = db.delete_history_item(user_id, vod_id, source, title)
+    return {"ok": True, "removed": removed}
 
 
 # ---------- 搜索历史 ----------
@@ -115,3 +106,13 @@ async def post_search_history(body: dict, user_id: int = Depends(require_token))
 async def delete_search_history(user_id: int = Depends(require_token)) -> dict:
     db.clear_search_history(user_id)
     return {"ok": True}
+
+
+async def delete_search_history_item(
+    keyword: str = None,
+    user_id: int = Depends(require_token),
+) -> dict:
+    if not keyword or not str(keyword).strip():
+        raise HTTPException(400, "缺少 keyword 参数")
+    removed = db.delete_search_history_item(user_id, str(keyword).strip())
+    return {"ok": True, "removed": removed}

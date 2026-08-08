@@ -49,6 +49,14 @@ async function verifyPassword(username, password, mode) {
             verified: true,
             timestamp: Date.now()
         }));
+
+        // 登录成功后拉取服务端设置，覆盖本地（换设备恢复源勾选/偏好）
+        try {
+            if (typeof applyServerSettings === 'function') {
+                await applyServerSettings();
+            }
+        } catch (e) {}
+
         return true;
     } catch (error) {
         console.error('登录失败:', error);

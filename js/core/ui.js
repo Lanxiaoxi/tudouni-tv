@@ -136,6 +136,77 @@ function closeModal() {
     document.getElementById('modalContent').innerHTML = '';
 }
 
+// ---------- 搜索历史服务端同步（多用户版） ----------
+
+// 推送一条搜索历史到服务端（fire-and-forget）
+async function pushSearchHistoryToServer(keyword) {
+    if (!keyword) return;
+    try { await window.Api.post('/api/search-history', { keyword }); } catch (e) {}
+}
+
+// 删除服务端单条搜索历史
+async function deleteSearchHistoryFromServer(keyword) {
+    try { await window.Api.del('/api/search-history/item', { keyword }); } catch (e) {}
+}
+
+// 会话内已从服务端同步过搜索历史的标记（避免渲染重入无限请求）
+let _searchHistoryServerSynced = false;
+
+// 从服务端拉取搜索历史，覆盖本地（换设备恢复）
+async function fetchServerSearchHistory() {
+    if (_searchHistoryServerSynced) return false;
+    try {
+        const data = await window.Api.get('/api/search-history');
+        const items = (data && data.items) || [];
+        _searchHistoryServerSynced = true;
+        if (items.length) {
+            const mapped = items.map(it => ({ text: it.keyword, timestamp: it.timestamp * 1000 }));
+            localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(mapped));
+        }
+        return items.length > 0;
+    } catch (e) {
+        return false;
+    }
+}
+
+// ---------- 设置同步（多用户版：源勾选/自定义源/偏好开关 存服务端 settings） ----------
+
+// 设置项键名（与后端 put_settings 白名单对齐）
+const SETTINGS_KEYS = [
+    'selectedAPIs', 'customAPIs', 'appTheme', 'autoplayEnabled',
+    'yellowFilterEnabled', 'adFilteringEnabled', 'doubanEnabled',
+    'userMovieTags', 'userTvTags'
+];
+
+// 把当前本地设置打包上传到服务端（fire-and-forget）
+async function syncSettingsToServer() {
+    const payload = {};
+    for (const key of SETTINGS_KEYS) {
+        const v = localStorage.getItem(key);
+        if (v !== null) {
+            try { payload[key] = JSON.parse(v); } catch (e) { payload[key] = v; }
+        }
+    }
+    if (!Object.keys(payload).length) return;
+    try { await window.Api.put('/api/me/settings', payload); } catch (e) {}
+}
+
+// 登录后从服务端拉取设置，覆盖本地（换设备恢复）
+async function applyServerSettings() {
+    try {
+        const settings = await window.Api.get('/api/me');
+        const s = (settings && settings.settings) || {};
+        for (const key of SETTINGS_KEYS) {
+            if (s[key] !== undefined && s[key] !== null) {
+                const value = typeof s[key] === 'string' ? s[key] : JSON.stringify(s[key]);
+                localStorage.setItem(key, value);
+            }
+        }
+    } catch (e) {
+        // 未登录/失败则保持本地
+    }
+}
+
 // 获取搜索历史的增强版本 - 支持新旧格式
 function getSearchHistory() {
     try {
@@ -195,6 +266,8 @@ function saveSearchHistory(query) {
 
     try {
         localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
+        // 同步到服务端
+        pushSearchHistoryToServer(query);
     } catch (e) {
         console.error('保存搜索历史失败:', e);
         // 如果存储失败（可能是localStorage已满），尝试清理旧数据
@@ -213,6 +286,11 @@ function saveSearchHistory(query) {
 function renderSearchHistory() {
     const historyContainer = document.getElementById('recentSearches');
     if (!historyContainer) return;
+
+    // 异步从服务端同步最新搜索历史（换设备恢复）
+    fetchServerSearchHistory().then(synced => {
+        if (synced) renderSearchHistory();
+    });
 
     const history = getSearchHistory();
 
@@ -276,6 +354,8 @@ function deleteSingleSearchHistory(query) {
         history = history.filter(item => item.text !== query);
         console.log('更新后的搜索历史:', history);
         localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
+        // 同步删除服务端
+        deleteSearchHistoryFromServer(query);
     } catch (e) {
         console.error('删除单条搜索历史失败:', e);
         showToast('删除单条搜索历史失败', 'error');
@@ -293,6 +373,8 @@ function clearSearchHistory() {
     }
     try {
         localStorage.removeItem(SEARCH_HISTORY_KEY);
+        // 同步清空服务端
+        try { window.Api.del('/api/search-history'); } catch (e) {}
         renderSearchHistory();
         showToast('搜索历史已清除', 'success');
     } catch (e) {
@@ -374,11 +456,79 @@ function getViewingHistory() {
     }
 }
 
+// ---------- 观看历史服务端同步（多用户版：localStorage 为本地缓存，服务端为持久层） ----------
+
+// 把单条历史 upsert 到服务端（fire-and-forget，失败静默）
+async function pushHistoryToServer(item) {
+    if (!item || !item.title) return;
+    try {
+        await window.Api.put('/api/history', {
+            title: item.title,
+            vod_id: item.vod_id || '',
+            source: item.sourceName || item.source || '',
+            pic: item.pic || '',
+            episodes: item.episodes || [],
+            episode_index: item.episodeIndex || 0,
+            position: item.playbackPosition || 0,
+            duration: item.duration || 0,
+            timestamp: item.timestamp || Date.now()
+        });
+    } catch (e) {
+        // 同步失败不影响本地功能
+    }
+}
+
+// 删除服务端单条历史（fire-and-forget）
+async function deleteHistoryFromServer(item) {
+    try {
+        await window.Api.del('/api/history/item', {
+            vod_id: item.vod_id || '',
+            source: item.sourceName || item.source || '',
+            title: item.vod_id ? '' : (item.title || '')
+        });
+    } catch (e) {
+        // 静默
+    }
+}
+
+// 会话内已从服务端同步过历史的标记（避免渲染重入导致无限请求）
+let _historyServerSynced = false;
+
+// 从服务端拉取历史，覆盖本地缓存（换设备恢复用）
+async function fetchServerHistory() {
+    if (_historyServerSynced) return null;
+    try {
+        const data = await window.Api.get('/api/history');
+        const items = (data && data.items) || [];
+        _historyServerSynced = true;
+        if (items.length) {
+            // 服务端为准：覆盖本地（本地可能残留旧/重复数据）
+            localStorage.setItem('viewingHistory', JSON.stringify(items));
+        }
+        return items;
+    } catch (e) {
+        return null; // 未登录/请求失败，保持本地
+    }
+}
+
 // 加载观看历史并渲染
 function loadViewingHistory() {
     const historyList = document.getElementById('historyList');
     if (!historyList) return;
 
+    // 先渲染本地缓存（即时响应）
+    renderHistoryList(historyList);
+
+    // 异步从服务端拉取最新历史，覆盖本地并重渲染（换设备/多端同步）
+    fetchServerHistory().then(items => {
+        if (items && items.length !== undefined) {
+            renderHistoryList(historyList);
+        }
+    });
+}
+
+// 渲染历史列表（从 localStorage 读）
+function renderHistoryList(historyList) {
     const history = getViewingHistory();
 
     if (history.length === 0) {
@@ -471,6 +621,8 @@ function backfillHistoryCovers(history) {
                     if (idx !== -1) {
                         cur[idx].pic = cover;
                         localStorage.setItem('viewingHistory', JSON.stringify(cur));
+                        // 同步补封面到服务端
+                        pushHistoryToServer(cur[idx]);
                     }
                 } catch (e) {}
                 // 更新页面上的缩略图（若仍在）
@@ -514,11 +666,17 @@ function deleteHistoryItem(encodedUrl) {
         // 获取当前历史记录
         const history = getViewingHistory();
 
+        // 找到要删除的项（用于服务端同步）
+        const target = history.find(item => item.url === url);
+
         // 过滤掉要删除的项
         const newHistory = history.filter(item => item.url !== url);
 
         // 保存回localStorage
         localStorage.setItem('viewingHistory', JSON.stringify(newHistory));
+
+        // 同步删除服务端记录
+        if (target) deleteHistoryFromServer(target);
 
         // 重新加载历史记录显示
         loadViewingHistory();
@@ -611,6 +769,8 @@ async function playFromHistory(url, title, episodeIndex, playbackPosition = 0) {
                         if (idx !== -1) {
                             history[idx] = { ...history[idx], ...historyItem }; // Merge, ensuring other properties are kept
                             localStorage.setItem('viewingHistory', JSON.stringify(history));
+                            // 同步到服务端（更新剧集快照 + 封面）
+                            pushHistoryToServer(history[idx]);
                             // console.log("观看历史中的剧集列表已更新。");
                         }
                     }
@@ -793,6 +953,9 @@ function addToViewingHistory(videoInfo) {
 
         // 保存到本地存储
         localStorage.setItem('viewingHistory', JSON.stringify(history));
+
+        // 同步到服务端（持久层）
+        pushHistoryToServer(history[0]);
     } catch (e) {
         // console.error('保存观看历史失败:', e);
     }
@@ -802,6 +965,8 @@ function addToViewingHistory(videoInfo) {
 function clearViewingHistory() {
     try {
         localStorage.removeItem('viewingHistory');
+        // 同步清空服务端
+        try { window.Api.del('/api/history'); } catch (e) {}
         loadViewingHistory(); // 重新加载空的历史记录
         showToast('观看历史已清空', 'success');
     } catch (e) {

@@ -5,7 +5,6 @@
 - users            用户（username 唯一，密码 pbkdf2 哈希+盐）
 - tokens           登录 token（绑定 user_id，带过期时间）
 - viewing_history  观看历史（进度并入：position/duration；剧集快照存 JSON）
-- comments         短评
 - search_history   搜索历史
 
 所有读写函数均为同步 sqlite3 调用；FastAPI 端点在 async 函数里直接调用
@@ -70,16 +69,6 @@ def init_db() -> None:
                 UNIQUE(user_id, vod_id, source)
             );
             CREATE INDEX IF NOT EXISTS idx_history_user ON viewing_history(user_id, timestamp);
-
-            CREATE TABLE IF NOT EXISTS comments (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                title      TEXT NOT NULL,
-                content    TEXT NOT NULL,
-                likes      INTEGER DEFAULT 0,
-                created_at INTEGER NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_comments_user ON comments(user_id, title);
 
             CREATE TABLE IF NOT EXISTS search_history (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -262,6 +251,32 @@ def clear_history(user_id: int) -> None:
         conn.close()
 
 
+def delete_history_item(user_id: int, vod_id: str | None = None, source: str | None = None, title: str | None = None) -> bool:
+    """删除单条历史。优先按 (vod_id, source)，否则按 title 兜底。返回是否删除。"""
+    conn = get_conn()
+    try:
+        cur = None
+        if vod_id and source:
+            cur = conn.execute(
+                "DELETE FROM viewing_history WHERE user_id = ? AND vod_id = ? AND source = ?",
+                (user_id, vod_id, source),
+            )
+        elif vod_id:
+            cur = conn.execute(
+                "DELETE FROM viewing_history WHERE user_id = ? AND vod_id = ?",
+                (user_id, vod_id),
+            )
+        elif title:
+            cur = conn.execute(
+                "DELETE FROM viewing_history WHERE user_id = ? AND title = ?",
+                (user_id, title),
+            )
+        conn.commit()
+        return bool(cur and cur.rowcount > 0)
+    finally:
+        conn.close()
+
+
 def _history_row(r: sqlite3.Row) -> dict:
     d = dict(r)
     try:
@@ -269,39 +284,6 @@ def _history_row(r: sqlite3.Row) -> dict:
     except (ValueError, TypeError):
         d["episodes"] = []
     return d
-
-
-# ---------- 短评 ----------
-
-def get_comments(user_id: int, title: str | None = None) -> list[dict]:
-    conn = get_conn()
-    try:
-        if title:
-            rows = conn.execute(
-                "SELECT * FROM comments WHERE user_id = ? AND title = ? ORDER BY created_at DESC",
-                (user_id, title),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM comments WHERE user_id = ? ORDER BY created_at DESC",
-                (user_id,),
-            ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
-
-
-def add_comment(user_id: int, title: str, content: str) -> int:
-    conn = get_conn()
-    try:
-        cur = conn.execute(
-            "INSERT INTO comments (user_id, title, content, created_at) VALUES (?,?,?,?)",
-            (user_id, title, content, int(time.time())),
-        )
-        conn.commit()
-        return cur.lastrowid
-    finally:
-        conn.close()
 
 
 # ---------- 搜索历史 ----------
@@ -326,6 +308,19 @@ def add_search_history(user_id: int, keyword: str) -> None:
             (user_id, keyword, int(time.time())),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_search_history_item(user_id: int, keyword: str) -> bool:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "DELETE FROM search_history WHERE user_id = ? AND keyword = ?",
+            (user_id, keyword),
+        )
+        conn.commit()
+        return bool(cur.rowcount > 0)
     finally:
         conn.close()
 

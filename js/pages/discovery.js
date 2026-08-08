@@ -397,6 +397,12 @@ function histDayGroup(ts) {
 }
 
 function renderHistoryPage() {
+    // 异步从服务端同步最新历史（换设备恢复），完成后重渲染
+    if (typeof fetchServerHistory === 'function') {
+        fetchServerHistory().then(items => {
+            if (items && items.length !== undefined) renderHistoryPage();
+        });
+    }
     const groups = ['今天', '昨天', '更早'];
     const history = (typeof getViewingHistory === 'function') ? getViewingHistory() : [];
     const total = history.length;
@@ -521,6 +527,7 @@ function goHistory() {
 function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
     try { localStorage.setItem('appTheme', theme); } catch (e) {}
+    if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
     const dark = theme === 'dark';
     const sun = document.getElementById('icSun');
     const moon = document.getElementById('icMoon');
@@ -575,6 +582,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (clearHist) clearHist.addEventListener('click', () => {
         if (confirm('确定要清空全部观看历史吗？此操作不可恢复。')) {
             try { localStorage.removeItem('viewingHistory'); } catch (e) {}
+            try { window.Api && window.Api.del('/api/history'); } catch (e) {} // 同步清空服务端
             renderHistoryPage();
             if (typeof showToast === 'function') showToast('观看历史已清空', 'success');
         }

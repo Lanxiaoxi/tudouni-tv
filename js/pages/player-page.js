@@ -2,7 +2,6 @@
    player-page.js · 播放页增强（重构后新增）
    - 片名信息区：评分/类型/年份/地区/简介（/api/detail）
    - 猜你喜欢：聚合源最新内容推荐
-   - 短评区：本地存储（localStorage）
    ============================================================ */
 
 function ppEsc(s) {
@@ -162,106 +161,12 @@ async function ppOpenRelated(id, title, source) {
 }
 window.ppOpenRelated = ppOpenRelated;
 
-/* ---------- 短评区（本地存储） ---------- */
-const COMMENT_STORAGE_KEY = 'videoComments';
-
-function getComments(title) {
-    try {
-        const all = JSON.parse(localStorage.getItem(COMMENT_STORAGE_KEY) || '{}');
-        return all[title] || [];
-    } catch (e) {
-        return [];
-    }
-}
-
-function saveComments(title, list) {
-    try {
-        const all = JSON.parse(localStorage.getItem(COMMENT_STORAGE_KEY) || '{}');
-        all[title] = list;
-        localStorage.setItem(COMMENT_STORAGE_KEY, JSON.stringify(all));
-    } catch (e) {}
-}
-
-function commentAvatarColor(name) {
-    const colors = ['#34d399', '#a78bfa', '#60a5fa', '#fbbf24', '#f472b6', '#34d399'];
-    let h = 0;
-    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997;
-    return colors[h % colors.length];
-}
-
-function renderCommentList() {
-    const title = localStorage.getItem('currentVideoTitle') || '';
-    const list = getComments(title);
-    const box = document.getElementById('commentList');
-    const count = document.getElementById('commentCount');
-    if (count) count.textContent = list.length ? list.length + ' 条' : '0 条';
-    if (!list.length) {
-        box.innerHTML = `<div style="color:var(--text-3);font-size:13px;padding:16px 0;text-align:center">还没有短评，来说两句吧</div>`;
-        return;
-    }
-    box.innerHTML = list.map((c, i) => `
-        <div class="comment">
-            <div class="avatar" style="background:${commentAvatarColor(c.user)}">${ppEsc(c.user.charAt(0) || '客')}</div>
-            <div class="c-body">
-                <div class="c-user">${ppEsc(c.user)}<span class="c-time">${ppEsc(c.time)}</span></div>
-                <div class="c-text">${ppEsc(c.text)}</div>
-                <div class="c-actions">
-                    <button class="c-act ${c.liked ? 'liked' : ''}" onclick="ppToggleCommentLike(${i})">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3zm0 0 5-8a2.5 2.5 0 0 1 2.4 1.7 2.5 2.5 0 0 1 .1 1.2L14 10h5.6a1.5 1.5 0 0 1 1.5 1.9l-2.3 8.5A2 2 0 0 1 16.9 22H7"/></svg>
-                        ${c.likes || 0}
-                    </button>
-                </div>
-            </div>
-        </div>`).join('');
-}
-
-function ppToggleCommentLike(idx) {
-    const title = localStorage.getItem('currentVideoTitle') || '';
-    const list = getComments(title);
-    if (!list[idx]) return;
-    list[idx].liked = !list[idx].liked;
-    list[idx].likes = (list[idx].likes || 0) + (list[idx].liked ? 1 : -1);
-    if (list[idx].likes < 0) list[idx].likes = 0;
-    saveComments(title, list);
-    renderCommentList();
-}
-window.ppToggleCommentLike = ppToggleCommentLike;
-
-function initComments() {
-    const sendBtn = document.getElementById('commentSend');
-    const input = document.getElementById('commentInput');
-    if (!sendBtn || !input) return;
-    renderCommentList();
-    sendBtn.addEventListener('click', () => {
-        const text = input.textContent.trim();
-        if (!text) {
-            if (typeof showToast === 'function') showToast('请输入评论内容', 'warning');
-            return;
-        }
-        const title = localStorage.getItem('currentVideoTitle') || '';
-        const list = getComments(title);
-        const now = new Date();
-        list.unshift({
-            user: '观众',
-            text: text,
-            time: (now.getHours() < 10 ? '0' : '') + now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes(),
-            likes: 0,
-            liked: false
-        });
-        saveComments(title, list);
-        input.textContent = '';
-        renderCommentList();
-        if (typeof showToast === 'function') showToast('评论已发布', 'success');
-    });
-}
-
 /* ---------- 初始化 ---------- */
 document.addEventListener('DOMContentLoaded', function () {
     // 等待 player.js 初始化完成（passwordVerified 事件后会初始化页面内容）
     const boot = () => {
         initWatchInfo();
         renderRelated();
-        initComments();
     };
     // player.js 在密码验证后才初始化，这里延迟执行避免读取空数据
     setTimeout(boot, 400);

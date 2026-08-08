@@ -177,6 +177,7 @@ function initializePageContent() {
     document.getElementById('autoplayToggle').addEventListener('change', function (e) {
         autoplayEnabled = e.target.checked;
         localStorage.setItem('autoplayEnabled', autoplayEnabled);
+        if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
     });
 
     // 优先使用URL传递的集数信息，否则从localStorage获取
@@ -687,6 +688,26 @@ function initPlayer(videoUrl) {
                 }
             } catch (e) {
             }
+            // 本地无进度时，尝试从服务端历史恢复（换设备场景）
+            try {
+                if (typeof window.Api === 'object' && !localStorage.getItem('videoProgress_' + getVideoId())) {
+                    window.Api.get('/api/history').then(data => {
+                        const items = (data && data.items) || [];
+                        const match = items.find(it =>
+                            it.title === currentVideoTitle &&
+                            (!it.vod_id || it.vod_id === new URLSearchParams(window.location.search).get('id'))
+                        ) || items.find(it => it.title === currentVideoTitle);
+                        if (match && match.position > 10 && match.position < art.duration - 2 && !videoHasEnded) {
+                            // 避免覆盖用户手动操作的进度：仅当播放器还停在开头附近
+                            if (art.video.currentTime < 10) {
+                                art.currentTime = match.position;
+                                showPositionRestoreHint(match.position);
+                            }
+                        }
+                    }).catch(() => {});
+                }
+            } catch (e) {
+            }
         }
 
         // 设置进度条点击监听
@@ -1068,6 +1089,8 @@ async function fetchCurrentVideoPic(vodId, sourceCode) {
             if (idx !== -1 && history[idx].pic !== cover) {
                 history[idx].pic = cover;
                 localStorage.setItem('viewingHistory', JSON.stringify(history));
+                // 同步服务端
+                if (typeof pushHistoryToServer === 'function') pushHistoryToServer(history[idx]);
             }
         } catch (e) {}
     } catch (e) {
@@ -1172,6 +1195,9 @@ function saveToHistory() {
         if (history.length > 50) history.splice(50);
 
         localStorage.setItem('viewingHistory', JSON.stringify(history));
+
+        // 同步到服务端（多用户持久层）
+        if (typeof pushHistoryToServer === 'function') pushHistoryToServer(history[0]);
     } catch (e) {
     }
 }
@@ -1266,6 +1292,8 @@ function saveCurrentProgress() {
                         history[idx].duration = duration;
                         history[idx].timestamp = Date.now();
                         localStorage.setItem('viewingHistory', JSON.stringify(history));
+                        // 同步进度到服务端
+                        if (typeof pushHistoryToServer === 'function') pushHistoryToServer(history[idx]);
                     }
                 }
             }

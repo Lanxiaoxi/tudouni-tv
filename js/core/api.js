@@ -32,6 +32,18 @@ const Api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
+    },
+
+    put(path, body) {
+        return this.request(path, {}, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+    },
+
+    del(path, params) {
+        return this.request(path, params, { method: 'DELETE' });
     }
 };
 

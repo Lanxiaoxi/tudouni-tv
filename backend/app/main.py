@@ -133,15 +133,14 @@ async def api_delete_history(user_id: int = Depends(auth.require_token)):
     return {"code": 0, "data": data, "message": "ok"}
 
 
-@app.get("/api/comments")
-async def api_comments(title: str | None = None, user_id: int = Depends(auth.require_token)):
-    data = await userdata.get_comments(title, user_id)
-    return {"code": 0, "data": data, "message": "ok"}
-
-
-@app.post("/api/comments")
-async def api_post_comment(body: dict, user_id: int = Depends(auth.require_token)):
-    data = await userdata.post_comment(body, user_id)
+@app.delete("/api/history/item")
+async def api_delete_history_item(
+    vod_id: str | None = None,
+    source: str | None = None,
+    title: str | None = None,
+    user_id: int = Depends(auth.require_token),
+):
+    data = await userdata.delete_history_item(vod_id, source, title, user_id)
     return {"code": 0, "data": data, "message": "ok"}
 
 
@@ -160,6 +159,15 @@ async def api_post_search_history(body: dict, user_id: int = Depends(auth.requir
 @app.delete("/api/search-history")
 async def api_delete_search_history(user_id: int = Depends(auth.require_token)):
     data = await userdata.delete_search_history(user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.delete("/api/search-history/item")
+async def api_delete_search_history_item(
+    keyword: str = None,
+    user_id: int = Depends(auth.require_token),
+):
+    data = await userdata.delete_search_history_item(keyword, user_id)
     return {"code": 0, "data": data, "message": "ok"}
 
 

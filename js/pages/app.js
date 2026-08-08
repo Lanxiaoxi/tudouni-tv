@@ -193,6 +193,7 @@ function checkAdultAPIsSelected() {
         yellowFilterToggle.checked = false;
         yellowFilterToggle.disabled = true;
         localStorage.setItem('yellowFilterEnabled', 'false');
+        if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
 
         // 添加禁用样式
         yellowFilterContainer.classList.add('filter-disabled');
@@ -316,6 +317,7 @@ function updateCustomApi(index) {
     // 保存 detail 字段
     customAPIs[index] = { name, url, detail, isAdult };
     localStorage.setItem('customAPIs', JSON.stringify(customAPIs));
+    if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
     renderCustomAPIsList();
     checkAdultAPIsSelected();
     restoreAddCustomApiButtons();
@@ -371,6 +373,8 @@ function updateSelectedAPIs() {
 
     // 保存到localStorage
     localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+    // 同步源勾选到服务端
+    if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
 
     // 更新显示选中的API数量
     updateSelectedApiCount();
@@ -545,6 +549,7 @@ function setupEventListeners() {
     if (yellowFilterToggle) {
         yellowFilterToggle.addEventListener('change', function (e) {
             localStorage.setItem('yellowFilterEnabled', e.target.checked);
+            if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
 
             // 控制黄色内容接口的显示状态
             const adultdiv = document.getElementById('adultdiv');
@@ -566,6 +571,7 @@ function setupEventListeners() {
     if (adFilterToggle) {
         adFilterToggle.addEventListener('change', function (e) {
             localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, e.target.checked);
+            if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
         });
     }
 }

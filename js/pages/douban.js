@@ -42,6 +42,7 @@ function saveUserTags() {
     try {
         localStorage.setItem('userMovieTags', JSON.stringify(movieTags));
         localStorage.setItem('userTvTags', JSON.stringify(tvTags));
+        if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
     } catch (e) {
         console.error('保存标签失败：', e);
         showToast('保存标签失败', 'error');
@@ -73,6 +74,7 @@ function initDouban() {
         doubanToggle.addEventListener('change', function(e) {
             const isChecked = e.target.checked;
             localStorage.setItem('doubanEnabled', isChecked);
+            if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
             
             // 更新开关外观
             if (isChecked) {
@@ -213,6 +215,7 @@ async function fillAndSearchWithDouban(title) {
                 // 如果函数不可用，则手动添加到selectedAPIs
                 selectedAPIs.push('dbzy');
                 localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+                if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
                 
                 // 更新选中API计数（如果有这个元素）
                 const countEl = document.getElementById('selectedAPICount');
