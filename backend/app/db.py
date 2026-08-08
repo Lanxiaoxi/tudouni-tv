@@ -18,6 +18,7 @@ import os
 import secrets
 import sqlite3
 import time
+from datetime import datetime
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -92,6 +93,7 @@ def init_db() -> None:
                 area        TEXT,
                 year        TEXT,
                 play_url    TEXT,
+                vod_time    INTEGER DEFAULT 0,
                 timestamp   INTEGER NOT NULL,
                 UNIQUE(source, vod_id)
             );
@@ -105,6 +107,11 @@ def init_db() -> None:
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "role" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+            conn.commit()
+        # 存量库迁移：早期 videos 表没有 vod_time 列，补上（幂等）
+        vcols = [r["name"] for r in conn.execute("PRAGMA table_info(videos)").fetchall()]
+        if "vod_time" not in vcols:
+            conn.execute("ALTER TABLE videos ADD COLUMN vod_time INTEGER DEFAULT 0")
             conn.commit()
     finally:
         conn.close()
@@ -365,6 +372,19 @@ def clear_search_history(user_id: int) -> None:
 _VIDEO_COLS = ("source", "source_name", "vod_id", "title", "type_name", "pic", "remarks", "area", "year", "play_url")
 
 
+def _parse_vod_time(value) -> int:
+    """上游 vod_time 转 epoch 秒。支持 "YYYY-MM-DD HH:MM:SS" 或纯数字时间戳；解析失败返回 0。"""
+    if not value:
+        return 0
+    s = str(value).strip()
+    if s.isdigit():
+        return int(s)
+    try:
+        return int(datetime.strptime(s, "%Y-%m-%d %H:%M:%S").timestamp())
+    except ValueError:
+        return 0
+
+
 def upsert_videos(rows: list[dict]) -> int:
     """批量 upsert 到 videos 表，按 (source, vod_id) 冲突更新。返回写入条数。"""
     if not rows:
@@ -380,17 +400,18 @@ def upsert_videos(rows: list[dict]) -> int:
                 continue
             conn.execute(
                 """
-                INSERT INTO videos (source, source_name, vod_id, title, type_name, pic, remarks, area, year, play_url, timestamp)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO videos (source, source_name, vod_id, title, type_name, pic, remarks, area, year, play_url, vod_time, timestamp)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(source, vod_id) DO UPDATE SET
                     source_name=excluded.source_name, title=excluded.title, type_name=excluded.type_name,
                     pic=excluded.pic, remarks=excluded.remarks, area=excluded.area, year=excluded.year,
-                    play_url=excluded.play_url, timestamp=excluded.timestamp
+                    play_url=excluded.play_url, vod_time=excluded.vod_time, timestamp=excluded.timestamp
                 """,
                 (
                     source, it.get("source_name"), vod_id, title,
                     it.get("type_name"), it.get("pic"), it.get("remarks"),
                     it.get("area"), it.get("year"), it.get("play_url"),
+                    _parse_vod_time(it.get("vod_time")),
                     int(it.get("timestamp") or time.time()),
                 ),
             )
@@ -466,19 +487,23 @@ def _video_row(r: sqlite3.Row) -> dict:
     }
 
 
+# 排序：内容更新时间(vod_time)优先，未知(vod_time=0，如按需填充的行)排最后，再按同步时间稳定
+_ORDER_SQL = "ORDER BY CASE WHEN vod_time > 0 THEN vod_time ELSE 0 END DESC, timestamp DESC"
+
+
 def query_videos_latest(limit: int = 200, source: list[str] | None = None) -> list[dict]:
-    """最新 N 条（跨源混合），可选按源列表过滤。用于 /api/items。"""
+    """最新 N 条（按内容更新时间），可选按源列表过滤。用于 /api/items。"""
     conn = get_conn()
     try:
         if source:
             placeholders = ",".join("?" * len(source))
             rows = conn.execute(
-                f"SELECT * FROM videos WHERE source IN ({placeholders}) ORDER BY timestamp DESC LIMIT ?",
+                f"SELECT * FROM videos WHERE source IN ({placeholders}) {_ORDER_SQL} LIMIT ?",
                 (*source, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM videos ORDER BY timestamp DESC LIMIT ?", (limit,)
+                f"SELECT * FROM videos {_ORDER_SQL} LIMIT ?", (limit,)
             ).fetchall()
         return [_video_row(r) for r in rows]
     finally:
@@ -492,12 +517,12 @@ def query_videos_by_source(source: list[str] | None = None, limit: int = 10000) 
         if source:
             placeholders = ",".join("?" * len(source))
             rows = conn.execute(
-                f"SELECT * FROM videos WHERE source IN ({placeholders}) ORDER BY timestamp DESC LIMIT ?",
+                f"SELECT * FROM videos WHERE source IN ({placeholders}) {_ORDER_SQL} LIMIT ?",
                 (*source, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM videos ORDER BY timestamp DESC LIMIT ?", (limit,)
+                f"SELECT * FROM videos {_ORDER_SQL} LIMIT ?", (limit,)
             ).fetchall()
         return [_video_row(r) for r in rows]
     finally:
@@ -512,12 +537,12 @@ def search_videos_local(wd: str, source: list[str] | None = None, limit: int = 2
         if source:
             placeholders = ",".join("?" * len(source))
             rows = conn.execute(
-                f"SELECT * FROM videos WHERE source IN ({placeholders}) AND title LIKE ? ORDER BY timestamp DESC LIMIT ?",
+                f"SELECT * FROM videos WHERE source IN ({placeholders}) AND title LIKE ? {_ORDER_SQL} LIMIT ?",
                 (*source, like, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM videos WHERE title LIKE ? ORDER BY timestamp DESC LIMIT ?",
+                f"SELECT * FROM videos WHERE title LIKE ? {_ORDER_SQL} LIMIT ?",
                 (like, limit),
             ).fetchall()
         return [_video_row(r) for r in rows]
