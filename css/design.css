@@ -685,6 +685,7 @@ svg{display:block}
 .modal-overlay:not(.hidden){display:flex;animation:fadeUp .3s ease both}
 .modal-overlay.show{display:flex;animation:fadeUp .3s ease both}
 .modal-box{
+  position:relative; /* 让 modal-close 的 absolute 定位相对弹窗而非全屏遮罩（否则 × 会跑到页面右上角） */
   width:100%;max-width:760px;max-height:88vh;overflow-y:auto;
   background:var(--bg-surface);border:1px solid var(--line-strong);border-radius:20px;
   box-shadow:var(--shadow-2);padding:24px;

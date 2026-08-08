@@ -591,16 +591,6 @@ function initPlayer(videoUrl) {
         }
     });
 
-    // 应用默认倍速偏好（设置面板可配置）
-    try {
-        const defaultRate = parseFloat(localStorage.getItem('defaultPlaybackRate') || '1');
-        if (defaultRate >= 0.5 && defaultRate <= 2) {
-            art.on('ready', () => {
-                try { art.video.playbackRate = defaultRate; } catch (e) {}
-            });
-        }
-    } catch (e) {}
-
     // artplayer 没有 'fullscreenWeb:enter', 'fullscreenWeb:exit' 等事件
     // 所以原控制栏隐藏代码并没有起作用
     // 实际起作用的是 artplayer 默认行为，它支持自动隐藏工���栏

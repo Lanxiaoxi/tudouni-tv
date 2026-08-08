@@ -542,18 +542,6 @@ function initTheme() {
     if (dm) dm.addEventListener('change', () => {
         applyTheme(dm.checked ? 'dark' : 'light');
     });
-    // 默认倍速偏好
-    const rateSelect = document.getElementById('defaultRateSelect');
-    if (rateSelect) {
-        try {
-            const saved = localStorage.getItem('defaultPlaybackRate');
-            if (saved) rateSelect.value = saved;
-        } catch (e) {}
-        rateSelect.addEventListener('change', () => {
-            try { localStorage.setItem('defaultPlaybackRate', rateSelect.value); } catch (e) {}
-            if (typeof showToast === 'function') showToast('默认倍速已保存', 'success');
-        });
-    }
 }
 
 /* ---------- 初始化 ---------- */
