@@ -6,6 +6,7 @@
 
 import asyncio
 import re
+import time
 
 import httpx
 from fastapi import HTTPException
@@ -13,7 +14,7 @@ from fastapi import HTTPException
 from . import db
 from .config import REQUEST_TIMEOUT, USER_AGENT
 from .security import validate_target_url
-from .sites import build_list_url, parse_sources
+from .sites import SITES, build_list_url, parse_sources
 from .textutil import normalize_remarks
 
 _client = httpx.AsyncClient(follow_redirects=True, timeout=REQUEST_TIMEOUT)
@@ -67,6 +68,36 @@ def _dedup(items: list[dict]) -> list[dict]:
         seen.add(name)
         out.append(it)
     return out
+
+
+async def test_site(source: str) -> dict:
+    """测单个数据源可达性：直接请求其列表接口第 1 页（绕过缓存，直测上游）。
+
+    返回 {source, ok, latency(ms), error?}。用于设置面板「测试所选源」。
+    """
+    site = SITES.get(source)
+    if not site:
+        raise HTTPException(400, f"无效的源: {source}")
+    start = time.time()
+    try:
+        resp = await _client.get(
+            build_list_url(site["api"], 1),
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            timeout=15,
+        )
+        latency = int((time.time() - start) * 1000)
+        if resp.status_code != 200:
+            return {"source": source, "ok": False, "latency": latency, "error": f"HTTP {resp.status_code}"}
+        try:
+            data = resp.json()
+        except ValueError:
+            return {"source": source, "ok": False, "latency": latency, "error": "响应非 JSON"}
+        lst = data.get("list") if isinstance(data, dict) else None
+        ok = isinstance(lst, list)
+        return {"source": source, "ok": ok, "latency": latency, "error": None if ok else "无数据列表"}
+    except Exception as exc:  # noqa: BLE001
+        latency = int((time.time() - start) * 1000)
+        return {"source": source, "ok": False, "latency": latency, "error": type(exc).__name__}
 
 
 async def get_vodlist(

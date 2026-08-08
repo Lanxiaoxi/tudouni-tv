@@ -231,7 +231,9 @@
                 </div>
                 <div class="api-checkbox-list" id="apiCheckboxes"><!-- JS 注入复选框 --></div>
                 <div class="api-status-row">
-                    <span>已选源：<span id="selectedApiCount" class="t-label">0</span></span>
+                    <span>已选源：<span id="selectedApiCount" class="t-label">0</span>
+                        <button id="testSourcesBtn" class="btn-mini" onclick="testSelectedSources()" title="测试所选源的可达性">测试所选源</button>
+                    </span>
                     <span id="siteStatus"></span>
                 </div>
             </div>

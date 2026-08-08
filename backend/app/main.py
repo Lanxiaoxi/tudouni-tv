@@ -236,6 +236,16 @@ async def api_vodlist(
     return {"code": 0, "data": data, "message": "ok"}
 
 
+@app.get("/api/site-test")
+async def api_site_test(
+    source: str = Query(...),
+    user_id: int = Depends(auth.require_token),
+):
+    """测单个数据源可达性（设置面板「测试所选源」用）。"""
+    data = await vodlist.test_site(source)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
 @app.get("/api/items")
 async def api_items(
     pg: int = Query(4, ge=1, le=10),

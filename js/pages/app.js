@@ -108,6 +108,7 @@ function initAPICheckboxes() {
                    ${checked ? 'checked' : ''} 
                    data-api="${apiKey}">
             <label for="api_${apiKey}" ${api.adult ? 'class="adult"' : ''}>${api.name}</label>
+            <span class="site-dot" id="siteDot_${apiKey}" title="未测试"></span>
         `;
         normaldiv.appendChild(checkbox);
 
@@ -160,6 +161,7 @@ function addAdultAPI() {
                        ${checked ? 'checked' : ''} 
                        data-api="${apiKey}">
                 <label for="api_${apiKey}" class="ml-1 text-xs text-pink-400 truncate">${api.name}</label>
+                <span class="site-dot" id="siteDot_${apiKey}" title="未测试"></span>
             `;
             adultdiv.appendChild(checkbox);
 
@@ -386,6 +388,60 @@ function updateSelectedApiCount() {
     if (countEl) {
         countEl.textContent = selectedAPIs.length;
     }
+}
+
+// 测试所选源的可达性：并行调 /api/site-test，结果以绿/红圆点显示在每个源行右侧
+async function testSelectedSources() {
+    // 密码保护校验
+    try {
+        if (window.ensurePasswordProtection) {
+            window.ensurePasswordProtection();
+        }
+    } catch (e) {
+        return;
+    }
+    const sources = [...selectedAPIs];
+    if (!sources.length) {
+        showToast('请先选择至少一个源', 'warning');
+        return;
+    }
+    const btn = document.getElementById('testSourcesBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '测试中...';
+    }
+    // 重置所有圆点为测试中状态
+    document.querySelectorAll('.site-dot').forEach(dot => {
+        dot.classList.remove('ok', 'fail');
+        dot.classList.add('pending');
+        dot.title = '测试中...';
+    });
+
+    await Promise.all(sources.map(async (key) => {
+        const dot = document.getElementById('siteDot_' + key);
+        if (!dot) return; // custom 源等无圆点的直接跳过
+        try {
+            const data = await window.Api.get('/api/site-test', { source: key });
+            dot.classList.remove('pending');
+            if (data && data.ok) {
+                dot.classList.add('ok');
+                dot.title = `可达 · ${data.latency}ms`;
+            } else {
+                dot.classList.add('fail');
+                dot.title = `不可达${data && data.error ? ' · ' + data.error : ''}`;
+            }
+        } catch (e) {
+            dot.classList.remove('pending');
+            dot.classList.add('fail');
+            dot.title = '测试失败';
+        }
+    }));
+
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = '测试所选源';
+    }
+    showToast('所选源测试完成', 'success');
 }
 
 // 全选或取消全选API
