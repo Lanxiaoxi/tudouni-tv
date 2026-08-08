@@ -50,6 +50,22 @@ async function verifyPassword(username, password, mode) {
             timestamp: Date.now()
         }));
 
+        // 切换/注册账号：清空本地旧用户的数据缓存（历史/搜索历史/进度/设置），
+        // 服务端为准，reload 后从服务端同步——防止新账号看到旧账号残留数据
+        try {
+            localStorage.removeItem('viewingHistory');
+            localStorage.removeItem('videoSearchHistory');
+            if (typeof SETTINGS_KEYS !== 'undefined') {
+                SETTINGS_KEYS.forEach(k => localStorage.removeItem(k));
+            }
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.indexOf('videoProgress_') === 0) keys.push(k);
+            }
+            keys.forEach(k => localStorage.removeItem(k));
+        } catch (e) {}
+
         // 登录成功后拉取服务端设置，覆盖本地（换设备恢复源勾选/偏好）
         try {
             if (typeof applyServerSettings === 'function') {
@@ -60,6 +76,8 @@ async function verifyPassword(username, password, mode) {
         return true;
     } catch (error) {
         console.error('登录失败:', error);
+        // 记录具体错误信息，供弹窗区分展示（如「用户名已被注册」）
+        window._lastAuthError = (error && error.message) ? String(error.message) : '';
         return false;
     }
 }
@@ -101,6 +119,8 @@ async function sha256(message) {
  * 显示密码验证弹窗
  */
 function showPasswordModal() {
+    // 每次打开默认停在「登录」Tab（避免上次切到注册后残留）
+    try { switchAuthTab('login'); } catch (e) {}
     // 弹窗必须盖过一切：隐藏 loading 遮罩（z-index 200）+ 弹窗提升到 300
     const loadingEl = document.getElementById('loading');
     if (loadingEl) loadingEl.style.display = 'none';
@@ -203,6 +223,17 @@ async function handlePasswordSubmit() {
         location.reload();
     } else {
         showPasswordError();
+        // 区分错误场景：注册重名 / 密码错误等（取后端返回的具体错误信息）
+        const errEl = document.getElementById('passwordError');
+        const lastErr = window._lastAuthError;
+        if (errEl) {
+            if (lastErr) {
+                errEl.textContent = lastErr;
+            } else {
+                errEl.textContent = mode === 'register' ? '注册失败，请重试' : '密码错误，请重试';
+            }
+        }
+        window._lastAuthError = '';
         if (passwordInput) {
             passwordInput.value = '';
             passwordInput.focus();
@@ -223,6 +254,9 @@ function switchAuthTab(mode) {
 
     if (tabLogin) tabLogin.classList.toggle('active', mode === 'login');
     if (tabRegister) tabRegister.classList.toggle('active', mode === 'register');
+    // 滑块移动：容器加 register-active 时滑块 translateX(100%)
+    const tabs = document.getElementById('authTabs');
+    if (tabs) tabs.classList.toggle('register-active', mode === 'register');
     if (btn) btn.textContent = mode === 'register' ? '注册' : '登录';
     if (desc) desc.textContent = mode === 'register' ? '注册新账号，观看记录将保存到服务器' : '登录后同步你的观看记录';
     if (err) err.classList.add('hidden');
@@ -329,9 +363,20 @@ async function logoutUser() {
     if (window.ProxyAuth && typeof window.ProxyAuth.logout === 'function') {
         try { await window.ProxyAuth.logout(); } catch (e) {}
     }
-    // 清理本地登录标记
+    // 清理本地登录标记与用户数据缓存（防止未登录/下个账号看到本账号残留数据）
     try { localStorage.removeItem('passwordVerified'); } catch (e) {}
     try { localStorage.removeItem('currentUsername'); } catch (e) {}
+    try { localStorage.removeItem('viewingHistory'); } catch (e) {}
+    try { localStorage.removeItem('videoSearchHistory'); } catch (e) {}
+    try {
+        // 清理所有播放进度键（videoProgress_* 前缀）
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.indexOf('videoProgress_') === 0) keys.push(k);
+        }
+        keys.forEach(k => localStorage.removeItem(k));
+    } catch (e) {}
     // 退出后刷新页面，触发登录弹窗
     window.location.reload();
 }

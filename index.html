@@ -316,9 +316,10 @@
             <div class="modal-head">
                 <h2 class="modal-title">TudouniTV</h2>
             </div>
-            <div class="auth-tabs" style="display:flex;gap:8px;margin-bottom:16px">
-                <button type="button" id="authTabLogin" class="auth-tab active" onclick="switchAuthTab('login')" style="flex:1;padding:10px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;border:1px solid transparent">登录</button>
-                <button type="button" id="authTabRegister" class="auth-tab" onclick="switchAuthTab('register')" style="flex:1;padding:10px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;border:1px solid transparent">注册</button>
+            <div class="auth-tabs" id="authTabs">
+                <span class="auth-slider" aria-hidden="true"></span>
+                <button type="button" id="authTabLogin" class="auth-tab active" onclick="switchAuthTab('login')">登录</button>
+                <button type="button" id="authTabRegister" class="auth-tab" onclick="switchAuthTab('register')">注册</button>
             </div>
             <p id="authDesc" style="color:var(--text-2);font-size:14px;margin-bottom:14px">登录后同步你的观看记录</p>
             <form id="passwordForm" onsubmit="handlePasswordSubmit(); return false;">

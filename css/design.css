@@ -741,9 +741,25 @@ svg{display:block}
 .form-input:focus{border-color:var(--accent)}
 .form-input::placeholder{color:var(--text-3)}
 .form-error{color:var(--danger);font-size:13px;margin-top:10px}
-.auth-tab{background:var(--bg-elevated);color:var(--text-2);border-color:var(--line);transition:all .2s}
-.auth-tab:hover{background:var(--bg-hover);color:var(--text-1)}
-.auth-tab.active{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+/* 登录/注册滑块切换 */
+.auth-tabs{
+  position:relative;display:grid;grid-template-columns:1fr 1fr;gap:0;
+  background:var(--bg-elevated);border-radius:12px;padding:4px;margin-bottom:16px;
+}
+.auth-slider{
+  position:absolute;top:4px;left:4px;width:calc(50% - 4px);height:calc(100% - 8px);
+  background:linear-gradient(135deg,var(--accent),var(--accent-strong));
+  border-radius:9px;box-shadow:0 2px 8px rgba(255,176,32,.25);
+  transition:transform .25s cubic-bezier(.4,0,.2,1);
+}
+.auth-tabs.register-active .auth-slider{transform:translateX(100%)}
+.auth-tab{
+  position:relative;z-index:1;padding:10px 0;border:none;background:transparent;
+  font-size:14px;font-weight:700;color:var(--text-2);cursor:pointer;
+  font-family:inherit;transition:color .2s;text-align:center;
+}
+.auth-tab:hover{color:var(--text-1)}
+.auth-tab.active{color:var(--accent-ink)}
 
 /* ============================================================
    Toast / Loading

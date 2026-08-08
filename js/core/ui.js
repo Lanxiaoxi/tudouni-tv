@@ -159,9 +159,12 @@ async function fetchServerSearchHistory() {
         const data = await window.Api.get('/api/search-history');
         const items = (data && data.items) || [];
         _searchHistoryServerSynced = true;
+        // 服务端为准：有数据覆盖本地；**为空也清空本地**（切换账号防残留）
         if (items.length) {
             const mapped = items.map(it => ({ text: it.keyword, timestamp: it.timestamp * 1000 }));
             localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(mapped));
+        } else {
+            localStorage.removeItem(SEARCH_HISTORY_KEY);
         }
         return items.length > 0;
     } catch (e) {
@@ -196,10 +199,14 @@ async function applyServerSettings() {
     try {
         const settings = await window.Api.get('/api/me');
         const s = (settings && settings.settings) || {};
+        const has = Object.prototype.hasOwnProperty;
         for (const key of SETTINGS_KEYS) {
-            if (s[key] !== undefined && s[key] !== null) {
+            if (has.call(s, key) && s[key] !== null && s[key] !== undefined) {
                 const value = typeof s[key] === 'string' ? s[key] : JSON.stringify(s[key]);
                 localStorage.setItem(key, value);
+            } else {
+                // 服务端没有该设置（新账号）→ 移除本地残留，让页面初始化用默认值
+                localStorage.removeItem(key);
             }
         }
     } catch (e) {
@@ -501,9 +508,11 @@ async function fetchServerHistory() {
         const data = await window.Api.get('/api/history');
         const items = (data && data.items) || [];
         _historyServerSynced = true;
+        // 服务端为准：有数据覆盖本地；**为空也清空本地**（切换账号/新用户时防止残留旧账号数据）
         if (items.length) {
-            // 服务端为准：覆盖本地（本地可能残留旧/重复数据）
             localStorage.setItem('viewingHistory', JSON.stringify(items));
+        } else {
+            localStorage.removeItem('viewingHistory');
         }
         return items;
     } catch (e) {
@@ -529,6 +538,11 @@ function loadViewingHistory() {
 
 // 渲染历史列表（从 localStorage 读）
 function renderHistoryList(historyList) {
+    // 未登录时不展示本地历史（防御：token 过期/登出残留场景）
+    if (!window.ProxyAuth || !window.ProxyAuth.getToken()) {
+        historyList.innerHTML = `<div class="history-panel-empty">登录后查看观看历史</div>`;
+        return;
+    }
     const history = getViewingHistory();
 
     if (history.length === 0) {
