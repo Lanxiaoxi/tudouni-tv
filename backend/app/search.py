@@ -1,8 +1,13 @@
 """聚合搜索：/api/search?wd=&source=&api_url=&page=
 
+三级链路（减少对资源站的实时请求）：
+① TTL 缓存：同词 3-5 分钟内命中直接返回（存的是最终聚合结果）
+② videos 镜像表：本地 title 模糊搜索（仅 pg=1），命中即返回并写缓存
+③ 实时兜底：①②都未命中才并发打资源站，聚合后写缓存
+
 - 不传 source：并行查所有普通源并合并去重（vod_name 同名保留第一个）
 - source=key1,key2：只查勾选的内置源（与前端设置勾选对齐）
-- source=custom&api_url=xxx：自定义源透传（前端"自定义接口"功能兼容）
+- source=custom&api_url=xxx：自定义源透传（走实时，不缓存/不走本地表）
 - 单源 8s 超时、失败静默降级为 []，不影响整体结果
 """
 
@@ -12,7 +17,9 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException
 
-from .config import MAX_QUERY_LENGTH, REQUEST_TIMEOUT, USER_AGENT
+from . import db
+from .cache import cache_get, cache_set
+from .config import MAX_QUERY_LENGTH, REQUEST_TIMEOUT, SEARCH_TTL_SECONDS, USER_AGENT
 from .security import validate_target_url
 from .sites import SEARCH_PATH, parse_sources
 from .textutil import normalize_remarks
@@ -69,13 +76,33 @@ async def aggregated_search(
     if page < 1:
         raise HTTPException(400, "页码必须大于 0")
 
+    is_custom = bool(source and str(source).startswith("custom"))
+    cache_key = f"search:{wd}:{source or 'all'}:{page}"
+
+    if not is_custom:
+        # 一级：TTL 缓存命中直接返回
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+        # 二级：本地 videos 镜像表（仅首页，标题模糊匹配）
+        if page == 1:
+            src_keys = [s for s in str(source or "").split(",") if s] or None
+            local = db.search_videos_local(wd, src_keys, limit=20)
+            if local:
+                items = _dedup(local)
+                result = {"total": len(items), "items": items, "page": page}
+                cache_set(cache_key, result, SEARCH_TTL_SECONDS)
+                return result
+
+    # 三级：实时拉取（或 custom 源直通）
     try:
         sources = parse_sources(source, api_url)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
     # 自定义源 URL 需先过 SSRF 校验
-    if source and source.startswith("custom") and api_url:
+    if is_custom and api_url:
         await validate_target_url(api_url)
 
     lists = await asyncio.gather(*[_fetch_source(v["api"], wd, page) for _, v in sources])
@@ -87,4 +114,7 @@ async def aggregated_search(
                 it["source_code"] = key
                 items.append(it)
     items = _dedup(items)
-    return {"total": len(items), "items": items, "page": page}
+    result = {"total": len(items), "items": items, "page": page}
+    if not is_custom:
+        cache_set(cache_key, result, SEARCH_TTL_SECONDS)
+    return result

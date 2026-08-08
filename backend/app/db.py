@@ -1,4 +1,4 @@
-"""SQLite 数据库层（多用户改造）。
+"""SQLite 数据库层（多用户改造 + 资源镜像表）。
 
 使用 Python 内置 sqlite3（零依赖），数据文件 backend/data.db。
 表：
@@ -6,6 +6,7 @@
 - tokens           登录 token（绑定 user_id，带过期时间）
 - viewing_history  观看历史（进度并入：position/duration；剧集快照存 JSON）
 - search_history   搜索历史
+- videos           资源镜像表（定时从资源站拉取，列表/搜索本地查）
 
 所有读写函数均为同步 sqlite3 调用；FastAPI 端点在 async 函数里直接调用
 （SQLite 操作极快，单机规模无性能问题）。每个请求用独立连接，避免跨线程共享。
@@ -78,6 +79,25 @@ def init_db() -> None:
                 timestamp INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_search_user ON search_history(user_id, timestamp);
+
+            CREATE TABLE IF NOT EXISTS videos (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                source      TEXT NOT NULL,
+                source_name TEXT,
+                vod_id      TEXT NOT NULL,
+                title       TEXT NOT NULL,
+                type_name   TEXT,
+                pic         TEXT,
+                remarks     TEXT,
+                area        TEXT,
+                year        TEXT,
+                play_url    TEXT,
+                timestamp   INTEGER NOT NULL,
+                UNIQUE(source, vod_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_videos_title ON videos(title);
+            CREATE INDEX IF NOT EXISTS idx_videos_type ON videos(type_name, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_videos_ts ON videos(timestamp);
             """
         )
         conn.commit()
@@ -336,5 +356,129 @@ def clear_search_history(user_id: int) -> None:
     try:
         conn.execute("DELETE FROM search_history WHERE user_id = ?", (user_id,))
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------- 资源镜像表（videos） ----------
+
+_VIDEO_COLS = ("source", "source_name", "vod_id", "title", "type_name", "pic", "remarks", "area", "year", "play_url")
+
+
+def upsert_videos(rows: list[dict]) -> int:
+    """批量 upsert 到 videos 表，按 (source, vod_id) 冲突更新。返回写入条数。"""
+    if not rows:
+        return 0
+    conn = get_conn()
+    n = 0
+    try:
+        for it in rows:
+            source = str(it.get("source") or "")
+            vod_id = str(it.get("vod_id") or "")
+            title = str(it.get("title") or "")
+            if not (source and vod_id and title):
+                continue
+            conn.execute(
+                """
+                INSERT INTO videos (source, source_name, vod_id, title, type_name, pic, remarks, area, year, play_url, timestamp)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(source, vod_id) DO UPDATE SET
+                    source_name=excluded.source_name, title=excluded.title, type_name=excluded.type_name,
+                    pic=excluded.pic, remarks=excluded.remarks, area=excluded.area, year=excluded.year,
+                    play_url=excluded.play_url, timestamp=excluded.timestamp
+                """,
+                (
+                    source, it.get("source_name"), vod_id, title,
+                    it.get("type_name"), it.get("pic"), it.get("remarks"),
+                    it.get("area"), it.get("year"), it.get("play_url"),
+                    int(it.get("timestamp") or time.time()),
+                ),
+            )
+            n += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return n
+
+
+def count_videos() -> int:
+    conn = get_conn()
+    try:
+        return int(conn.execute("SELECT COUNT(*) c FROM videos").fetchone()["c"])
+    finally:
+        conn.close()
+
+
+def _video_row(r: sqlite3.Row) -> dict:
+    """转成与上游 list 条目兼容的 dict（字段名对齐 vod_*，供前端直接消费）。"""
+    return {
+        "source_name": r["source_name"] or r["source"],
+        "source_code": r["source"],
+        "vod_id": r["vod_id"],
+        "vod_name": r["title"],
+        "type_name": r["type_name"],
+        "vod_pic": r["pic"],
+        "vod_remarks": r["remarks"],
+        "vod_area": r["area"],
+        "vod_year": r["year"],
+        "vod_play_url": r["play_url"],
+    }
+
+
+def query_videos_latest(limit: int = 200, source: list[str] | None = None) -> list[dict]:
+    """最新 N 条（跨源混合），可选按源列表过滤。用于 /api/items。"""
+    conn = get_conn()
+    try:
+        if source:
+            placeholders = ",".join("?" * len(source))
+            rows = conn.execute(
+                f"SELECT * FROM videos WHERE source IN ({placeholders}) ORDER BY timestamp DESC LIMIT ?",
+                (*source, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM videos ORDER BY timestamp DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [_video_row(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def query_videos_by_source(source: list[str] | None = None, limit: int = 10000) -> list[dict]:
+    """按源列表查全量（默认全部源），供分类过滤使用。"""
+    conn = get_conn()
+    try:
+        if source:
+            placeholders = ",".join("?" * len(source))
+            rows = conn.execute(
+                f"SELECT * FROM videos WHERE source IN ({placeholders}) ORDER BY timestamp DESC LIMIT ?",
+                (*source, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM videos ORDER BY timestamp DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [_video_row(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def search_videos_local(wd: str, source: list[str] | None = None, limit: int = 20) -> list[dict]:
+    """本地模糊搜索 title（LIKE），可选按源列表过滤。用于搜索二级。"""
+    conn = get_conn()
+    try:
+        like = f"%{wd}%"
+        if source:
+            placeholders = ",".join("?" * len(source))
+            rows = conn.execute(
+                f"SELECT * FROM videos WHERE source IN ({placeholders}) AND title LIKE ? ORDER BY timestamp DESC LIMIT ?",
+                (*source, like, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM videos WHERE title LIKE ? ORDER BY timestamp DESC LIMIT ?",
+                (like, limit),
+            ).fetchall()
+        return [_video_row(r) for r in rows]
     finally:
         conn.close()

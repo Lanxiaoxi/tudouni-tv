@@ -15,7 +15,8 @@ import re
 import httpx
 from fastapi import HTTPException
 
-from .config import REQUEST_TIMEOUT, USER_AGENT
+from .cache import cache_get, cache_set
+from .config import DETAIL_TTL_SECONDS, REQUEST_TIMEOUT, USER_AGENT
 from .security import validate_target_url
 from .sites import SITES
 from .textutil import normalize_remarks
@@ -54,7 +55,15 @@ async def get_detail(
     if not re.fullmatch(r"[\w-]+", id):
         raise HTTPException(400, "无效的视频ID格式")
 
-    if source == "custom":
+    is_custom = source == "custom"
+    # TTL 缓存：非自定义源命中直接返回（剧集列表短期内基本不变）
+    if not is_custom:
+        cache_key = f"detail:{source or 'jinying'}:{id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+    if is_custom:
         if not customApi:
             raise HTTPException(400, "使用自定义API时必须提供API地址")
         await validate_target_url(customApi)
@@ -89,7 +98,7 @@ async def get_detail(
 
     v = lst[0]
     episodes = _parse_episodes(v.get("vod_play_url"), v.get("vod_content"))
-    return {
+    result = {
         "code": 200,
         "episodes": episodes,
         "detailUrl": detail_url,
@@ -107,3 +116,6 @@ async def get_detail(
             "source_code": source_code,
         },
     }
+    if not is_custom:
+        cache_set(cache_key, result, DETAIL_TTL_SECONDS)
+    return result

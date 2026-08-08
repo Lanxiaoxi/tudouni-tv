@@ -5,9 +5,11 @@ SERVE_STATIC=true（默认）时挂载前端目录，一键跑通全站（开发
 生产环境由 Nginx 托管前端并反代 /api/*，可设 SERVE_STATIC=false。
 """
 
+import asyncio
 import logging
 import mimetypes
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
@@ -15,13 +17,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, detail, home, proxy, search, userdata, vodlist
+from . import auth, db, detail, home, proxy, search, sync, userdata, vodlist
 
 # 修复 Windows 上 Python mimetypes 把 .js 映射成 text/plain 的问题
 # （浏览器会拒绝执行 text/plain 的 <script>，导致前端 JS 全部不生效）
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/javascript", ".mjs")
-from .config import FRONTEND_DIR, SERVE_STATIC
+from .config import FRONTEND_DIR, SERVE_STATIC, SYNC_INTERVAL_HOURS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,7 +31,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger("libretv")
 
-app = FastAPI(title="LibreTV API", version="0.1.0")
+
+async def _sync_loop() -> None:
+    """后台同步循环：冷启动表空立即同步一次，之后按 SYNC_INTERVAL_HOURS 间隔执行。"""
+    try:
+        if db.count_videos() == 0:
+            logger.info("videos 表为空，冷启动同步资源站...")
+            stats = await sync.sync_all_sources()
+            logger.info("冷启动同步完成: %s", stats)
+    except Exception as exc:  # noqa: BLE001 同步失败不阻塞服务
+        logger.error("冷启动同步失败: %s", exc)
+
+    while True:
+        await asyncio.sleep(SYNC_INTERVAL_HOURS * 3600)
+        try:
+            stats = await sync.sync_all_sources()
+            logger.info("定时同步完成: %s", stats)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("定时同步失败: %s", exc)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_sync_loop())
+    logger.info("资源镜像表同步任务已启动（间隔 %sh）", SYNC_INTERVAL_HOURS)
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="LibreTV API", version="0.1.0", lifespan=lifespan)
 
 # 初始化 SQLite（幂等）
 db.init_db()
