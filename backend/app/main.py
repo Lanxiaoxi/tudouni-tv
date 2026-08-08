@@ -248,11 +248,15 @@ async def api_site_test(
 
 @app.get("/api/items")
 async def api_items(
-    pg: int = Query(4, ge=1, le=10),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=500),
     _: None = Depends(auth.require_token),
 ):
-    """数据项：后端完成拉取/去重，一次返回全量 items（首页与分类页共享同一份数据）。"""
-    data = await home.get_home(pg)
+    """数据项：后端完成拉取/去重，按 offset/limit 分批返回（首页与分类页共享同一份数据）。
+
+    首屏请求 offset=0 返回前 500 条即渲染；其余批次后台补齐，total 恒为全局去重后总数。
+    """
+    data = await home.get_home(offset=offset, limit=limit)
     return {"code": 0, "data": data, "message": "ok"}
 
 

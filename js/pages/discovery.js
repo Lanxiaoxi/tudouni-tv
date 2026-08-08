@@ -244,6 +244,65 @@ function renderHero() {
     }
 }
 
+// 加载全局 pool：首屏 500 条立即返回（先渲染），其余批次后台补齐（不阻塞首屏）。
+// 后端 /api/items 按「最新 2000 条 → 全局去重」切片返回，total 恒为全局总数，拼接不重复。
+async function loadHomePool() {
+    if (window.homeDataPool && window.homeDataPool.length) return window.homeDataPool;
+    const data = await window.Api.get('/api/items', { offset: 0, limit: 500 });
+    window.homeDataPool = (data && data.items) || [];
+    window.homeDataTotal = (data && data.total) || window.homeDataPool.length;
+    // 还有剩余则后台补齐（首页渲染不等待，分类统计后续自动更新）
+    if ((window.homeDataTotal || 0) > window.homeDataPool.length) {
+        prefetchHomePool();
+    }
+    return window.homeDataPool;
+}
+
+// 后台补齐 /api/items 剩余批次：每批 500 条，到达后合并进全局 pool。
+// 用户若已切到分类页则同步刷新统计与分类数据（grid 本身不重绘，避免打断浏览）。
+// 防重入：并发调用共享同一个 promise，重复进入直接复用；调用方也可 await 等待补齐完成。
+let poolPrefetchPromise = null;
+function prefetchHomePool() {
+    if (poolPrefetchPromise) return poolPrefetchPromise;
+    poolPrefetchPromise = (async () => {
+        try {
+            const total = window.homeDataTotal || (window.homeDataPool || []).length;
+            for (let off = (window.homeDataPool || []).length; off < total; off += 500) {
+                const data = await window.Api.get('/api/items', { offset: off, limit: 500 });
+                const batch = (data && data.items) || [];
+                if (!batch.length) break;
+                // 后端按全局去重后切片返回，直接拼接；再按名字兜底去重一次防并发重复
+                const seen = new Set((window.homeDataPool || []).map(i => i.vod_name));
+                const fresh = batch.filter(i => {
+                    const n = i.vod_name || '';
+                    if (!n || seen.has(n)) return false;
+                    seen.add(n);
+                    return true;
+                });
+                if (!fresh.length) continue;
+                window.homeDataPool = (window.homeDataPool || []).concat(fresh);
+                console.log('[pool] 已补齐:', window.homeDataPool.length, '/', total);
+                if (currentView === 'category') refreshCategoryCount();
+            }
+        } catch (e) {
+            console.warn('后台补齐数据失败(不影响已渲染内容):', e.message);
+        } finally {
+            poolPrefetchPromise = null;
+        }
+    })();
+    return poolPrefetchPromise;
+}
+
+// 分类统计刷新（数据补齐后调用）：更新 catPool 与"共 N 部内容"，
+// 列表保持当前滚动/翻页状态，不重绘 grid。
+function refreshCategoryCount() {
+    const pool = window.homeDataPool || [];
+    const filtered = pool.filter(it => classifyType(it.type_name) === curCat);
+    catPool = curType === '全部' ? filtered : filtered.filter(i => (i.type_name || '') === curType);
+    const countEl = document.getElementById('catCount');
+    if (countEl) countEl.textContent = `共 ${catPool.length} 部内容`;
+}
+
 async function renderHomeRows() {
     // 三行先显示 loading
     ['stripSeries', 'stripMovies', 'stripAnime'].forEach(id => {
@@ -251,12 +310,10 @@ async function renderHomeRows() {
         if (el) el.innerHTML = `<div class="row-loading"><div class="spin"></div><span>加载中...</span></div>`;
     });
     try {
-        // 后端 /api/items 一次完成"拉取 4 源 × 2 页 + 去重"（无状态通用）；
-        // 前端从 pool 做分类分组与 hero 选片（业务逻辑保留前端，增删种类不动后端）
-        const data = await window.Api.get('/api/items');
-        const items = (data && data.items) || [];
+        // 后端 /api/items 按 offset/limit 分批：首屏 500 先渲染，其余批次后台补齐到 pool；
+        // 分类页与首页共享 pool，补全后分类统计自动更新（"共 N 部内容"）
+        const items = await loadHomePool();
         if (!items.length) throw new Error('首页数据为空');
-        window.homeDataPool = items;
         renderRow('stripSeries', 'series', 12);
         renderRow('stripMovies', 'movie', 12);
         renderRow('stripAnime', ['anime', 'variety'], 14); // 动漫·综艺行：合并动漫与综艺
@@ -339,11 +396,14 @@ async function loadCategoryPage() {
     const grid = document.getElementById('catGrid');
     const loadMoreBtn = document.getElementById('btnLoadMore');
     try {
-        // 数据来自全局 pool（后端 /api/items 一次拉取去重，首页与分类页共享）；
-        // pool 为空时（如直接深链进入分类页）先请求一次
+        // 数据来自全局 pool（后端 /api/items 分批拉取去重，首页与分类页共享）；
+        // pool 为空时（如直接深链进入分类页）先请求首屏；
+        // 若已有首屏但尚未补齐（首页加载未完就切来），等待后台补齐完成，确保统计数字准确
         if (!window.homeDataPool || !window.homeDataPool.length) {
-            const data = await window.Api.get('/api/items');
-            window.homeDataPool = (data && data.items) || [];
+            await loadHomePool();
+        }
+        if ((window.homeDataTotal || 0) > (window.homeDataPool || []).length) {
+            await prefetchHomePool();
         }
         const pool = window.homeDataPool || [];
         // 大类过滤
