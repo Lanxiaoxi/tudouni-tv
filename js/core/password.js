@@ -36,12 +36,14 @@ window.isPasswordProtected = isPasswordProtected;
 window.isPasswordRequired = isPasswordRequired;
 
 /**
- * 验证用户输入的密码是否正确（重构后：调后端 /api/auth 签发 token）
+ * 验证登录（多用户版）：调后端 /api/auth/login 签发 token
  */
-async function verifyPassword(password) {
+async function verifyPassword(username, password, mode) {
     try {
-        const token = await window.ProxyAuth.login(password);
-        if (!token) return false;
+        const result = mode === 'register'
+            ? await window.ProxyAuth.register(username, password)
+            : await window.ProxyAuth.login(username, password);
+        if (!result || !result.token) return false;
 
         localStorage.setItem(PASSWORD_CONFIG.localStorageKey, JSON.stringify({
             verified: true,
@@ -70,6 +72,7 @@ window.isPasswordRequired = isPasswordRequired;
 window.isPasswordVerified = isPasswordVerified;
 window.verifyPassword = verifyPassword;
 window.ensurePasswordProtection = ensurePasswordProtection;
+window.switchAuthTab = switchAuthTab;
 
 // SHA-256实现，可用Web Crypto API
 async function sha256(message) {
@@ -105,46 +108,15 @@ function showPasswordModal() {
         const cancelBtn = document.getElementById('passwordCancelBtn');
         if (cancelBtn) cancelBtn.classList.add('hidden');
 
-        // 检查是否需要强制设置密码
-        if (isPasswordRequired()) {
-            // 修改弹窗内容提示用户需要先设置密码
-            const title = passwordModal.querySelector('h2');
-            const description = passwordModal.querySelector('p');
-            if (title) title.textContent = '需要设置密码';
-            if (description) description.textContent = '请先在部署平台设置 PASSWORD 环境变量来保护您的实例';
-            
-            // 隐藏密码输入框和提交按钮，只显示提示信息
-            const form = passwordModal.querySelector('form');
-            const errorMsg = document.getElementById('passwordError');
-            if (form) form.style.display = 'none';
-            if (errorMsg) {
-                errorMsg.textContent = '为确保安全，必须设置 PASSWORD 环境变量才能使用本服务，请联系管理员进行配置';
-                errorMsg.classList.remove('hidden');
-                errorMsg.className = 'text-red-500 mt-2 font-medium'; // 改为更醒目的红色
-            }
-        } else {
-            // 正常的密码验证模式
-            const title = passwordModal.querySelector('h2');
-            const description = passwordModal.querySelector('p');
-            if (title) title.textContent = '访问验证';
-            if (description) description.textContent = '请输入密码继续访问';
-            
-            const form = passwordModal.querySelector('form');
-            if (form) form.style.display = 'block';
-        }
-
         passwordModal.style.display = 'flex';
 
-        // 只有在非强制设置密码模式下才聚焦输入框
-        if (!isPasswordRequired()) {
-            // 确保输入框获取焦点
-            setTimeout(() => {
-                const passwordInput = document.getElementById('passwordInput');
-                if (passwordInput) {
-                    passwordInput.focus();
-                }
-            }, 100);
-        }
+        // 聚焦用户名输入框
+        setTimeout(() => {
+            const usernameInput = document.getElementById('authUsername');
+            if (usernameInput) {
+                usernameInput.focus();
+            }
+        }, 100);
     }
 }
 
@@ -197,12 +169,23 @@ function hidePasswordError() {
 }
 
 /**
- * 处理密码提交事件（异步）
+ * 处理登录/注册提交事件（异步）
  */
 async function handlePasswordSubmit() {
+    const usernameInput = document.getElementById('authUsername');
     const passwordInput = document.getElementById('passwordInput');
+    const username = usernameInput ? usernameInput.value.trim() : '';
     const password = passwordInput ? passwordInput.value.trim() : '';
-    if (await verifyPassword(password)) {
+    const mode = window._authMode === 'register' ? 'register' : 'login';
+
+    if (!username || !password) {
+        showPasswordError();
+        const errEl = document.getElementById('passwordError');
+        if (errEl) errEl.textContent = '请输入用户名和密码';
+        return;
+    }
+
+    if (await verifyPassword(username, password, mode)) {
         hidePasswordModal();
 
         // 触发密码验证成功事件
@@ -220,19 +203,30 @@ async function handlePasswordSubmit() {
 }
 
 /**
- * 初始化密码验证系统
+ * 切换登录/注册 Tab
+ */
+function switchAuthTab(mode) {
+    window._authMode = mode;
+    const tabLogin = document.getElementById('authTabLogin');
+    const tabRegister = document.getElementById('authTabRegister');
+    const btn = document.getElementById('passwordSubmitBtn');
+    const desc = document.getElementById('authDesc');
+    const err = document.getElementById('passwordError');
+
+    if (tabLogin) tabLogin.classList.toggle('active', mode === 'login');
+    if (tabRegister) tabRegister.classList.toggle('active', mode === 'register');
+    if (btn) btn.textContent = mode === 'register' ? '注册' : '登录';
+    if (desc) desc.textContent = mode === 'register' ? '注册新账号，观看记录将保存到服务器' : '登录后同步你的观看记录';
+    if (err) err.classList.add('hidden');
+}
+
+/**
+ * 初始化登录系统
  */
 function initPasswordProtection() {
-    // 如果需要强制设置密码，显示警告弹窗
-    if (isPasswordRequired()) {
+    // 未登录则显示登录/注册弹窗
+    if (!isPasswordVerified()) {
         showPasswordModal();
-        return;
-    }
-    
-    // 如果设置了密码但用户未验证，显示密码输入框
-    if (isPasswordProtected() && !isPasswordVerified()) {
-        showPasswordModal();
-        return;
     }
 }
 

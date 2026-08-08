@@ -30,19 +30,45 @@ function clearToken() {
     setToken(null);
 }
 
-// 登录：POST /api/auth，成功后保存 token
-async function login(password) {
-    const res = await fetch('/api/auth', {
+// 登录：POST /api/auth/login，成功后保存 token
+async function login(username, password) {
+    const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: password })
+        body: JSON.stringify({ username: username, password: password })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.code !== 0 || !data.data || !data.data.token) {
         throw new Error(data.message || '登录失败');
     }
     setToken(data.data.token);
-    return data.data.token;
+    return data.data;
+}
+
+// 注册：POST /api/auth/register，成功后保存 token（自动登录）
+async function register(username, password) {
+    const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.code !== 0 || !data.data || !data.data.token) {
+        throw new Error(data.message || '注册失败');
+    }
+    setToken(data.data.token);
+    return data.data;
+}
+
+// 登出：清除本地 token（服务端 token 一并失效）
+async function logout() {
+    const token = getToken();
+    try {
+        if (token) {
+            await fetch('/api/auth/logout', { method: 'POST' }); // 拦截器自动带 token
+        }
+    } catch (e) {}
+    clearToken();
 }
 
 // 包装 fetch：/api/* 自动附加 Authorization 头（原有调用方无需改动）
@@ -104,6 +130,8 @@ async function login(password) {
 // 导出到全局（保持旧调用约定，新代码用 window.Api）
 window.ProxyAuth = {
     login,
+    register,
+    logout,
     getToken,
     setToken,
     clearToken

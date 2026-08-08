@@ -729,6 +729,9 @@ svg{display:block}
 .form-input:focus{border-color:var(--accent)}
 .form-input::placeholder{color:var(--text-3)}
 .form-error{color:var(--danger);font-size:13px;margin-top:10px}
+.auth-tab{background:var(--bg-elevated);color:var(--text-2);border-color:var(--line);transition:all .2s}
+.auth-tab:hover{background:var(--bg-hover);color:var(--text-1)}
+.auth-tab.active{background:var(--accent);color:var(--accent-ink);border-color:transparent}
 
 /* ============================================================
    Toast / Loading
