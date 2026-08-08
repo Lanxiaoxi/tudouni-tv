@@ -1,8 +1,8 @@
-// 密码保护功能（重构后：登录态由后端 /api/auth 校验，前端不再持有密码哈希）
+// 登录态管理（多用户版：注册/登录由后端 /api/auth 签发 token，前端只存 token 与用户名）
 
 /**
- * 检查是否设置了密码保护
- * 重构后：密码由后端 PASSWORD 环境变量配置，前端一律视为已启用
+ * 检查是否设置了访问保护
+ * 多用户版：前端一律视为已启用（未登录即弹注册/登录框）
  */
 function isPasswordProtected() {
     return true;
@@ -10,7 +10,7 @@ function isPasswordProtected() {
 
 /**
  * 检查是否强制要求设置密码
- * 重构后：密码在服务器 .env 配置，前端无需也无法设置，恒为 false
+ * 多用户版：无全局密码概念，恒为 false
  */
 function isPasswordRequired() {
     return false;

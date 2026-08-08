@@ -2,6 +2,11 @@
 # 放置到 /etc/systemd/system/tudounitv.service，然后：
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now tudounitv
+#
+# 说明：
+# - 多用户注册登录，无需 PASSWORD 环境变量
+# - 可选环境变量写入 /var/www/libretv/backend/.env 文件（见下方 Environment 示例）
+# - 首次启动会自动建库并执行一次初始同步（拉资源站索引）
 
 [Unit]
 Description=LibreTV Python Backend (FastAPI)
@@ -11,8 +16,15 @@ After=network.target
 Type=simple
 User=www-data
 WorkingDirectory=/var/www/libretv/backend
-Environment=PASSWORD=你的密码
+# 生产环境：前端由 Nginx 托管，后端不挂静态文件
 Environment=SERVE_STATIC=false
+# 可选：按需调整（默认值见 backend/app/config.py）
+# Environment=SYNC_INTERVAL_HOURS=24
+# Environment=SYNC_PAGES_PER_SOURCE=10
+# Environment=SYNC_FRESH_PAGES=2
+# Environment=SYNC_DEEP_CYCLE_DAYS=15
+# Environment=SYNC_STALE_DAYS=30
+# Environment=TOKEN_TTL_DAYS=7
 EnvironmentFile=-/var/www/libretv/backend/.env
 ExecStart=/usr/local/bin/uv run uvicorn app.main:app --host 127.0.0.1 --port 9797
 Restart=always
