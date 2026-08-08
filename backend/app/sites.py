@@ -5,6 +5,8 @@
 第三方源可能随时失效，失效时删除对应项即可。
 """
 
+from urllib.parse import quote
+
 SITES: dict[str, dict] = {
     "jinying":  {"api": "http://jyzyapi.com/provide/vod",              "name": "金鹰资源", "adult": False},
     "guangsu":  {"api": "http://api.guangsuapi.com/api.php/provide/vod", "name": "光速资源", "adult": False},
@@ -23,6 +25,24 @@ SITES: dict[str, dict] = {
 # 苹果 CMS 接口参数（与前端 js/config.js API_CONFIG 对齐）
 SEARCH_PATH = "?ac=videolist&wd="
 LIST_PATH = "?ac=videolist&pg="
+
+# CMS V10 列表接口通用透传参数白名单（t=分类ID 各站不统一，按尽力透传处理）。
+# 只透传这里列出的键，杜绝任意参数注入；新参数需先加白名单。
+CMS_LIST_PARAMS = {"t", "h", "by", "order", "zy", "year", "area", "lang", "letter"}
+
+
+def build_list_url(api_base: str, pg: int = 1, extra: dict | None = None) -> str:
+    """构建 CMS V10 兼容的列表 URL。
+
+    默认只带 ac=videolist&pg=N（保持现有 /api/items 极简行为）；
+    extra 里的键按 CMS_LIST_PARAMS 白名单过滤后追加透传（值经 quote 编码）。
+    """
+    parts = ["ac=videolist", f"pg={pg}"]
+    if extra:
+        for k, v in extra.items():
+            if v is not None and k in CMS_LIST_PARAMS:
+                parts.append(f"{k}={quote(str(v))}")
+    return api_base.rstrip("/") + "?" + "&".join(parts)
 
 
 def parse_sources(source: str | None, api_url: str | None) -> list[tuple[str, dict]]:

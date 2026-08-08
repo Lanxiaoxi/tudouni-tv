@@ -97,9 +97,20 @@ async def api_vodlist(
     source: str | None = None,
     api_url: str | None = None,
     pg: int = Query(1, ge=1),
+    t: str | None = None,
+    h: str | None = None,
+    by: str | None = None,
+    order: str | None = None,
+    zy: str | None = None,
+    year: str | None = None,
+    area: str | None = None,
+    lang: str | None = None,
     _: None = Depends(auth.require_token),
 ):
-    data = await vodlist.get_vodlist(cat, source, api_url, pg)
+    data = await vodlist.get_vodlist(
+        cat, source, api_url, pg,
+        t=t, h=h, by=by, order=order, zy=zy, year=year, area=area, lang=lang,
+    )
     return {"code": 0, "data": data, "message": "ok"}
 
 

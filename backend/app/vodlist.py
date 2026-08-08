@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 from .config import REQUEST_TIMEOUT, USER_AGENT
 from .security import validate_target_url
-from .sites import LIST_PATH, parse_sources
+from .sites import build_list_url, parse_sources
 from .textutil import normalize_remarks
 
 _client = httpx.AsyncClient(follow_redirects=True, timeout=REQUEST_TIMEOUT)
@@ -35,8 +35,8 @@ def classify_type(type_name: str | None) -> str:
     return "movie"
 
 
-async def _fetch_list(api_base: str, pg: int) -> list[dict]:
-    url = api_base.rstrip("/") + LIST_PATH + str(pg)
+async def _fetch_list(api_base: str, pg: int, extra: dict | None = None) -> list[dict]:
+    url = build_list_url(api_base, pg, extra)
     try:
         resp = await _client.get(
             url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
@@ -73,7 +73,26 @@ async def get_vodlist(
     source: str | None = None,
     api_url: str | None = None,
     pg: int = 1,
+    t: str | None = None,
+    h: str | None = None,
+    by: str | None = None,
+    order: str | None = None,
+    zy: str | None = None,
+    year: str | None = None,
+    area: str | None = None,
+    lang: str | None = None,
 ) -> dict:
+    """分类 / 列表聚合。
+
+    cat/source/pg 语义保持不变：
+    - cat 为本地 type_name 过滤（post-filter）
+    - source 指定数据源（逗号分隔 / custom+api_url）
+    - pg 页码（唯一默认透传给资源站的参数）
+
+    新增 CMS V10 透传参数（t/h/by/order/zy/year/area/lang）：
+    按白名单原样拼到上游 URL。注意 t=分类ID 各站不统一，
+    仅对单一 source 请求有意义，聚合多源时勿用。
+    """
     if cat and cat not in _VALID_CATS:
         raise HTTPException(400, f"无效的分类: {cat}")
     if pg < 1:
@@ -87,7 +106,9 @@ async def get_vodlist(
     if source and source.startswith("custom") and api_url:
         await validate_target_url(api_url)
 
-    lists = await asyncio.gather(*[_fetch_list(v["api"], pg) for _, v in sources])
+    extra = {"t": t, "h": h, "by": by, "order": order,
+             "zy": zy, "year": year, "area": area, "lang": lang}
+    lists = await asyncio.gather(*[_fetch_list(v["api"], pg, extra) for _, v in sources])
     items: list[dict] = []
     for (key, site), lst in zip(sources, lists):
         for it in lst:
