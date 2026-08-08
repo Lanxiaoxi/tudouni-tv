@@ -60,7 +60,7 @@
             <div class="search" style="height:34px">
                 <input id="playerSearchInput" type="text" placeholder="搜索…" aria-label="搜索"
                        autocomplete="off" style="height:100%"
-                       onkeydown="if(event.key==='Enter'){var v=this.value.trim();if(v){location.href='/s='+encodeURIComponent(v)}}">
+                       onkeydown="if(event.key==='Enter'){window.playerSearch && playerSearch(this)}">
             </div>
         </div>
         <button id="goBack" onclick="goBack(event)" class="ep-nav-btn" style="flex-shrink:0" aria-label="返回上一页">
@@ -113,10 +113,11 @@
                 <div class="watch-info">
                     <h1 class="watch-title" id="watchTitle" style="font-size:23px">加载中...</h1>
                     <div class="watch-tags" id="watchTags"></div>
+                    <div class="watch-desc" id="watchDesc" style="display:none"></div>
                     <div class="act-row">
                         <button class="act-btn primary" id="btnPlayCurrent" style="display:none">
-                            <svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l11-6.86a1 1 0 0 0 0-1.7l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>
-                            <span>立即播放</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+                            <span>刷新播放</span>
                         </button>
                         <button class="act-btn" onclick="showSwitchResourceModal()">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16m0 0l-6-6m6 6l6-6"/></svg>
@@ -126,20 +127,31 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                             复制链接
                         </button>
-                        <button class="act-btn" onclick="toggleEpisodeOrder()">
-                            <svg id="orderIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;transition:transform .25s"><path d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
-                            <span id="orderText">倒序排列</span>
-                        </button>
                         <button class="act-btn" id="lockToggle" onclick="toggleControlsLock()" title="锁定控制">
                             <svg id="lockIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M15 11V7a3 3 0 0 0-6 0v4m-3 4h12v6H6v-6z"/></svg>
                         </button>
                     </div>
-                    <div class="watch-desc" id="watchDesc" style="display:none"></div>
                 </div>
 
                 <!-- 源信息（player.js 动态渲染） -->
                 <div id="resourceInfoBarContainer" class="ep-nav-row"></div>
 
+                <!-- 短评区 -->
+                <div class="comments" id="commentsSection">
+                    <div class="c-head">
+                        <h2>短评 <span id="commentCount"></span></h2>
+                    </div>
+                    <div class="composer">
+                        <div class="avatar" style="background:linear-gradient(135deg,#a78bfa,#6366f1)">客</div>
+                        <div class="composer-box" contenteditable="true" data-ph="写下你的观后感…" id="commentInput"></div>
+                        <button class="act-btn primary composer-send" id="commentSend">发布</button>
+                    </div>
+                    <div id="commentList"></div>
+                </div>
+            </div>
+
+            <!-- ===== 右侧：选集 + 猜你喜欢 ===== -->
+            <div class="watch-side">
                 <!-- 选集区 -->
                 <div class="episodes">
                     <div class="ep-head">
@@ -171,27 +183,14 @@
                     </div>
                 </div>
 
-                <!-- 短评区 -->
-                <div class="comments" id="commentsSection">
-                    <div class="c-head">
-                        <h2>短评 <span id="commentCount"></span></h2>
+                <!-- 猜你喜欢 -->
+                <aside class="related">
+                    <div class="related-title">猜你喜欢</div>
+                    <div id="relatedList">
+                        <div class="rel-loading" style="color:var(--text-3);font-size:13px;padding:20px 0">加载中...</div>
                     </div>
-                    <div class="composer">
-                        <div class="avatar" style="background:linear-gradient(135deg,#a78bfa,#6366f1)">客</div>
-                        <div class="composer-box" contenteditable="true" data-ph="写下你的观后感…" id="commentInput"></div>
-                        <button class="act-btn primary composer-send" id="commentSend">发布</button>
-                    </div>
-                    <div id="commentList"></div>
-                </div>
+                </aside>
             </div>
-
-            <!-- ===== 右侧：猜你喜欢 ===== -->
-            <aside class="related">
-                <div class="related-title">猜你喜欢</div>
-                <div id="relatedList">
-                    <div class="rel-loading" style="color:var(--text-3);font-size:13px;padding:20px 0">加载中...</div>
-                </div>
-            </aside>
         </div>
     </main>
 
@@ -269,25 +268,28 @@
     <script src="js/pages/player-page.js?v=3"></script>
 
     <script>
-        // 修复 home 跳转
+        // 修复 home 跳转（播放器统一为整页跳转，不再有 iframe 场景）
         document.addEventListener('DOMContentLoaded', function() {
+            // 导航链接：直接整页跳转
+            document.querySelectorAll('.nav-link').forEach(function (link) {
+                link.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    window.location.href = link.getAttribute('href') || '/';
+                });
+            });
+            // 搜索框：整页跳转
+            window.playerSearch = function (input) {
+                var v = input.value.trim();
+                if (!v) return;
+                window.location.href = '/s=' + encodeURIComponent(v);
+            };
+
             // 使用事件委托处理首页按钮点击
             document.body.addEventListener('click', function(event) {
                 const homeButton = event.target.closest('#homeButton');
                 if (homeButton) {
                     event.preventDefault();
                     event.stopPropagation();
-
-                    // 如果是在iframe中打开的，尝试关闭iframe
-                    if (window.self !== window.top) {
-                        try {
-                            // 尝试调用父窗口的关闭播放器函数
-                            window.parent.closeVideoPlayer && window.parent.closeVideoPlayer(true);
-                            return;
-                        } catch (e) {
-                            console.error('调用父窗口closeVideoPlayer失败:', e);
-                        }
-                    }
 
                     // 多重兜底跳转
                     try {

@@ -437,6 +437,9 @@ svg{display:block}
 .c-act.liked{color:var(--like)}
 
 /* 右侧相关推荐 */
+.watch-side{display:flex;flex-direction:column;gap:24px}
+.watch-side .episodes{margin-top:0}
+.watch-side .ep-grid{grid-template-columns:repeat(auto-fill,minmax(64px,1fr))}
 .related{display:flex;flex-direction:column;gap:14px}
 .related-title{font-size:16px;font-weight:800;padding-bottom:4px}
 .rel-card{display:flex;gap:12px;cursor:pointer;border-radius:14px;padding:6px;transition:background .2s ease}
@@ -664,8 +667,9 @@ svg{display:block}
 .hp-item .hp-title{font-size:13.5px;font-weight:700;line-height:1.4;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
 .hp-item .hp-meta{font-size:11.5px;color:var(--text-3);margin-top:3px}
 .hp-item .hp-time{font-size:11px;color:var(--text-3);margin-top:4px}
-.hp-thumb{width:44px;aspect-ratio:2/3;border-radius:7px;overflow:hidden;flex-shrink:0;background:var(--bg-elevated)}
-.hp-thumb img{width:100%;height:100%;object-fit:cover}
+.hp-thumb{position:relative;width:44px;aspect-ratio:2/3;border-radius:7px;overflow:hidden;flex-shrink:0;background:var(--bg-elevated)}
+.hp-thumb img{position:absolute;inset:0;z-index:1;width:100%;height:100%;object-fit:cover}
+.hp-thumb svg{position:absolute;inset:0;width:100%;height:100%}
 .hp-item .hp-del{position:absolute;right:6px;top:6px;color:var(--text-3);opacity:0;transition:opacity .2s;background:none;border:none;padding:3px}
 .hp-item:hover .hp-del{opacity:1}
 .hp-item .hp-del:hover{color:var(--danger)}

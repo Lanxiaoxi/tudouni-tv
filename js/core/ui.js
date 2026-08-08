@@ -404,6 +404,10 @@ function loadViewingHistory() {
         // 为防止XSS，使用encodeURIComponent编码URL
         const safeURL = encodeURIComponent(item.url);
 
+        // 封面图：仅当是 http 链接才显示，加载失败时回退到下方 SVG 占位
+        const safePic = item.pic && String(item.pic).startsWith('http') ?
+            item.pic.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
+
         // 构建历史记录项HTML（hp-item 设计稿侧滑列表样式）
         return `
             <div class="hp-item" onclick="playFromHistory('${item.url}', '${safeTitle}', ${item.episodeIndex || 0}, ${item.playbackPosition || 0})">
@@ -413,7 +417,8 @@ function loadViewingHistory() {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
                 </button>
-                <div class="hp-thumb">
+                <div class="hp-thumb" data-url="${encodeURIComponent(item.url)}">
+                    ${safePic ? `<img src="${safePic}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
                     <svg viewBox="0 0 80 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
                         <rect width="80" height="120" fill="#1d2430"/>
                         <circle cx="40" cy="48" r="16" fill="none" stroke="#ffb020" stroke-opacity=".5" stroke-width="2.5"/>
@@ -428,6 +433,66 @@ function loadViewingHistory() {
             </div>
         `;
     }).join('');
+
+    // 对缺少封面的记录自动补封面（老记录可能没有 pic 字段）
+    backfillHistoryCovers(history);
+}
+
+// 会话内已尝试过补封面的 url 集合，避免每次打开面板重复请求
+const _historyCoverBackfilled = new Set();
+
+// 自动为缺封面的历史记录请求详情接口补封面
+function backfillHistoryCovers(history) {
+    const pending = (history || []).filter(item =>
+        !item.pic &&
+        item.vod_id &&
+        item.sourceName &&
+        !_historyCoverBackfilled.has(item.url)
+    );
+    if (pending.length === 0) return;
+
+    // 并发控制：最多同时 4 个请求，避免一次性打太多
+    const CONCURRENCY = 4;
+    let cursor = 0;
+    const worker = async () => {
+        while (cursor < pending.length) {
+            const item = pending[cursor++];
+            _historyCoverBackfilled.add(item.url);
+            try {
+                const resp = await fetch(`/api/detail?id=${encodeURIComponent(item.vod_id)}&source=${encodeURIComponent(item.sourceName)}`);
+                if (!resp.ok) continue;
+                const data = await resp.json();
+                const cover = data && data.videoInfo && data.videoInfo.cover;
+                if (!cover || !String(cover).startsWith('http')) continue;
+                // 回写 localStorage
+                try {
+                    const cur = getViewingHistory();
+                    const idx = cur.findIndex(h => h.url === item.url);
+                    if (idx !== -1) {
+                        cur[idx].pic = cover;
+                        localStorage.setItem('viewingHistory', JSON.stringify(cur));
+                    }
+                } catch (e) {}
+                // 更新页面上的缩略图（若仍在）
+                const thumb = document.querySelector(`.hp-thumb[data-url="${encodeURIComponent(item.url)}"]`);
+                if (thumb) {
+                    let img = thumb.querySelector('img');
+                    if (!img) {
+                        img = document.createElement('img');
+                        img.alt = '';
+                        img.loading = 'lazy';
+                        img.onerror = function () { this.style.display = 'none'; };
+                        thumb.appendChild(img);
+                    }
+                    img.src = cover;
+                    img.style.display = '';
+                }
+            } catch (e) {
+                // 补封面失败不影响列表展示
+            }
+        }
+    };
+    for (let i = 0; i < Math.min(CONCURRENCY, pending.length); i++) worker();
 }
 
 // 格式化播放时间为 mm:ss 格式
@@ -537,6 +602,10 @@ async function playFromHistory(url, title, episodeIndex, playbackPosition = 0) {
                     if (historyItem) {
                         historyItem.episodes = [...episodesList]; // Deep copy
                         historyItem.lastSyncTime = Date.now(); // Add sync timestamp
+                        // 顺手回填封面（老记录可能没有 pic 字段）
+                        if (videoDetails.videoInfo && videoDetails.videoInfo.cover && String(videoDetails.videoInfo.cover).startsWith('http')) {
+                            historyItem.pic = videoDetails.videoInfo.cover;
+                        }
                         const history = JSON.parse(historyRaw); // Re-parse to ensure we have the latest version
                         const idx = history.findIndex(item => item.url === url);
                         if (idx !== -1) {
@@ -633,11 +702,12 @@ async function playFromHistory(url, title, episodeIndex, playbackPosition = 0) {
             playerUrl = playUrl.toString();
         }
 
-        showVideoPlayer(playerUrl);
+        // 整页跳转到播放页（与主入口 playVideo 的 watch.html 流程一致，不用 iframe）
+        window.location.href = playerUrl;
     } catch (e) {
         // console.error('从历史记录播放失败:', e);
         const simpleUrl = `player.html?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&index=${episodeIndex}`;
-        showVideoPlayer(simpleUrl);
+        window.location.href = simpleUrl;
     }
 }
 

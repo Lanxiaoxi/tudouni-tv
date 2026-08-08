@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from .config import REQUEST_TIMEOUT, USER_AGENT
 from .security import validate_target_url
 from .sites import LIST_PATH, parse_sources
+from .textutil import normalize_remarks
 
 _client = httpx.AsyncClient(follow_redirects=True, timeout=REQUEST_TIMEOUT)
 
@@ -44,7 +45,13 @@ async def _fetch_list(api_base: str, pg: int) -> list[dict]:
             return []
         data = resp.json()
         lst = data.get("list") if isinstance(data, dict) else None
-        return lst if isinstance(lst, list) else []
+        if not isinstance(lst, list):
+            return []
+        # 统一规范化 vod_remarks（"第N集已完结" → "共N集已完结"）
+        for it in lst:
+            if isinstance(it, dict) and it.get("vod_remarks"):
+                it["vod_remarks"] = normalize_remarks(it["vod_remarks"])
+        return lst
     except Exception:
         return []
 

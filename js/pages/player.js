@@ -36,24 +36,13 @@ function goBack(event) {
         return;
     }
     
-    // 4. 如果是在iframe中打开的，尝试关闭iframe
-    if (window.self !== window.top) {
-        try {
-            // 尝试调用父窗口的关闭播放器函数
-            window.parent.closeVideoPlayer && window.parent.closeVideoPlayer();
-            return;
-        } catch (e) {
-            console.error('调用父窗口closeVideoPlayer失败:', e);
-        }
-    }
-    
-    // 5. 无法确定上一页，则返回首页
+    // 4. 无法确定上一页，则返回首页
     if (!referrer || referrer === '') {
         window.location.href = '/';
         return;
     }
     
-    // 6. 以上都不满足，使用默认行为：返回上一页
+    // 5. 以上都不满足，使用默认行为：返回上一页
     window.history.back();
 }
 
@@ -86,7 +75,6 @@ let currentEpisodeIndex = 0;
 let art = null; // 用于 ArtPlayer 实例
 let currentHls = null; // 跟踪当前HLS实例
 let currentEpisodes = [];
-let episodesReversed = false;
 let autoplayEnabled = true; // 默认开启自动连播
 let videoHasEnded = false; // 跟踪视频是否已经自然结束
 let userClickedPosition = null; // 记录用户点击的位置
@@ -94,6 +82,7 @@ let shortcutHintTimeout = null; // 用于控制快捷键提示显示时间
 let adFilteringEnabled = true; // 默认开启广告过滤
 let progressSaveInterval = null; // 定期保存进度的计时器
 let currentVideoUrl = ''; // 记录当前实际的视频URL
+let currentVideoPic = ''; // 当前视频封面（写入历史记录用）
 const isWebkit = (typeof window.webkitConvertPointFromNodeToPage === 'function')
 Artplayer.FULLSCREEN_WEB_IN_BODY = true;
 
@@ -166,6 +155,13 @@ function initializePageContent() {
     // 保存当前视频URL
     currentVideoUrl = videoUrl || '';
 
+    // 异步获取当前视频封面（供历史记录缩略图使用）
+    const videoIdForPic = urlParams.get('id');
+    const sourceForPic = urlParams.get('source');
+    if (videoIdForPic && sourceForPic) {
+        fetchCurrentVideoPic(videoIdForPic, sourceForPic);
+    }
+
     // 从localStorage获取数据
     currentVideoTitle = title || localStorage.getItem('currentVideoTitle') || '未知视频';
     currentEpisodeIndex = index;
@@ -212,12 +208,9 @@ function initializePageContent() {
 
         // 更新当前索引为验证过的值
         currentEpisodeIndex = index;
-
-        episodesReversed = localStorage.getItem('episodesReversed') === 'true';
     } catch (e) {
         currentEpisodes = [];
         currentEpisodeIndex = 0;
-        episodesReversed = false;
     }
 
     // 设置页面标题
@@ -242,9 +235,6 @@ function initializePageContent() {
 
     // 更新按钮状态
     updateButtonStates();
-
-    // 更新排序按钮状态
-    updateOrderButton();
 
     // 添加对进度条的监听，确保点击准确跳转
     setTimeout(() => {
@@ -888,19 +878,17 @@ function renderEpisodes() {
         return;
     }
 
-    const episodes = episodesReversed ? [...currentEpisodes].reverse() : currentEpisodes;
+    const episodes = currentEpisodes;
     let html = '';
 
     episodes.forEach((episode, index) => {
-        // 根据倒序状态计算真实的剧集索引
-        const realIndex = episodesReversed ? currentEpisodes.length - 1 - index : index;
-        const isActive = realIndex === currentEpisodeIndex;
+        const isActive = index === currentEpisodeIndex;
 
         html += `
-            <button id="episode-${realIndex}" 
-                    onclick="playEpisode(${realIndex})" 
+            <button id="episode-${index}" 
+                    onclick="playEpisode(${index})" 
                     class="ep-item episode-btn ${isActive ? 'cur' : ''}">
-                ${realIndex + 1}
+                ${index + 1}
             </button>
         `;
     });
@@ -1002,31 +990,6 @@ function copyLinks() {
     }
 }
 
-// 切换集数排序
-function toggleEpisodeOrder() {
-    episodesReversed = !episodesReversed;
-
-    // 保存到localStorage
-    localStorage.setItem('episodesReversed', episodesReversed);
-
-    // 重新渲染集数列表
-    renderEpisodes();
-
-    // 更新排序按钮
-    updateOrderButton();
-}
-
-// 更新排序按钮状态
-function updateOrderButton() {
-    const orderText = document.getElementById('orderText');
-    const orderIcon = document.getElementById('orderIcon');
-
-    if (orderText && orderIcon) {
-        orderText.textContent = episodesReversed ? '正序排列' : '倒序排列';
-        orderIcon.style.transform = episodesReversed ? 'rotate(180deg)' : '';
-    }
-}
-
 // 设置进度条准确点击处理
 function setupProgressBarPreciseClicks() {
     // 查找DPlayer的进度条元素
@@ -1096,6 +1059,32 @@ function setupProgressBarPreciseClicks() {
     }
 }
 
+// 异步获取当前视频封面（详情接口返回 videoInfo.cover），并回写历史记录
+async function fetchCurrentVideoPic(vodId, sourceCode) {
+    try {
+        const resp = await fetch(`/api/detail?id=${encodeURIComponent(vodId)}&source=${encodeURIComponent(sourceCode)}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const cover = (data && data.videoInfo && data.videoInfo.cover) ? String(data.videoInfo.cover) : '';
+        if (!cover || !cover.startsWith('http')) return;
+        currentVideoPic = cover;
+        try { localStorage.setItem('currentVideoPic', cover); } catch (e) {}
+        // 回写历史记录中匹配当前剧集的那条，让已存的记录也能补上封面
+        try {
+            const history = JSON.parse(localStorage.getItem('viewingHistory') || '[]');
+            const idx = history.findIndex(item =>
+                item.title === currentVideoTitle && item.sourceName === sourceCode
+            );
+            if (idx !== -1 && history[idx].pic !== cover) {
+                history[idx].pic = cover;
+                localStorage.setItem('viewingHistory', JSON.stringify(history));
+            }
+        } catch (e) {}
+    } catch (e) {
+        // 封面获取失败不影响播放
+    }
+}
+
 // 在播放器初始化后添加视频到历史记录
 function saveToHistory() {
     // 确保 currentEpisodes 非空且有当前视频URL
@@ -1129,6 +1118,7 @@ function saveToHistory() {
     // 构建要保存的视频信息对象
     const videoInfo = {
         title: currentVideoTitle,
+        pic: currentVideoPic || (() => { try { return localStorage.getItem('currentVideoPic') || ''; } catch (e) { return ''; } })(),
         directVideoUrl: currentVideoUrl, // Current episode's direct URL
         url: `player.html?url=${encodeURIComponent(currentVideoUrl)}&title=${encodeURIComponent(currentVideoTitle)}&source=${encodeURIComponent(sourceName)}&source_code=${encodeURIComponent(sourceCode)}&id=${encodeURIComponent(id_from_params || '')}&index=${currentEpisodeIndex}&position=${Math.floor(currentPosition || 0)}`,
         episodeIndex: currentEpisodeIndex,
@@ -1160,6 +1150,7 @@ function saveToHistory() {
             existingItem.sourceName = videoInfo.sourceName; // Should be consistent, but update just in case
             existingItem.sourceCode = videoInfo.sourceCode;
             existingItem.vod_id = videoInfo.vod_id;
+            if (videoInfo.pic) existingItem.pic = videoInfo.pic;
             
             // Update URLs to reflect the current episode being watched
             existingItem.directVideoUrl = videoInfo.directVideoUrl; // Current episode's direct URL
@@ -1438,22 +1429,6 @@ function toggleControlsLock() {
     icon.innerHTML = controlsLocked
         ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d=\"M12 15v2m0-8V7a4 4 0 00-8 0v2m8 0H4v8h16v-8H6v-6z\"/>'
         : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d=\"M15 11V7a3 3 0 00-6 0v4m-3 4h12v6H6v-6z\"/>';
-}
-
-// 支持在iframe中关闭播放器
-function closeEmbeddedPlayer() {
-    try {
-        if (window.self !== window.top) {
-            // 如果在iframe中，尝试调用父窗口的关闭方法
-            if (window.parent && typeof window.parent.closeVideoPlayer === 'function') {
-                window.parent.closeVideoPlayer();
-                return true;
-            }
-        }
-    } catch (e) {
-        console.error('尝试关闭嵌入式播放器失败:', e);
-    }
-    return false;
 }
 
 function renderResourceInfoBar() {

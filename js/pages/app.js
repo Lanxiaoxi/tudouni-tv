@@ -13,8 +13,6 @@ let currentEpisodeIndex = 0;
 let currentEpisodes = [];
 // 添加当前视频的标题
 let currentVideoTitle = '';
-// 全局变量用于倒序状态
-let episodesReversed = false;
 
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function () {
@@ -944,12 +942,6 @@ async function showDetails(id, vod_name, sourceCode) {
                 ${detailInfoHtml}
                 <div class="modal-ep-tools">
                     <div class="info">
-                        <button onclick="toggleEpisodeOrder('${sourceCode}', '${id}')" class="order-btn">
-                            <svg class="order-ic" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
-                            </svg>
-                            <span>${episodesReversed ? '正序排列' : '倒序排列'}</span>
-                        </button>
                         <span>共 ${data.episodes.length} 集</span>
                     </div>
                     <button onclick="copyLinks()" class="act-btn" style="height:34px;padding:0 14px;font-size:12.5px">
@@ -1018,48 +1010,10 @@ function playVideo(url, vod_name, sourceCode, episodeIndex = 0, vodId = '') {
     window.location.href = watchUrl;
 }
 
-// 弹出播放器页面
-function showVideoPlayer(url) {
-    // 在打开播放器前，隐藏详情弹窗
-    const detailModal = document.getElementById('modal');
-    if (detailModal) {
-        detailModal.classList.add('hidden');
-    }
-    // 临时隐藏搜索结果和豆瓣区域，防止高度超出播放器而出现滚动条
-    document.getElementById('resultsArea').classList.add('hidden');
-    document.getElementById('doubanArea').classList.add('hidden');
-    // 在框架中打开播放页面
-    videoPlayerFrame = document.createElement('iframe');
-    videoPlayerFrame.id = 'VideoPlayerFrame';
-    videoPlayerFrame.className = 'fixed w-full h-screen z-40';
-    videoPlayerFrame.src = url;
-    document.body.appendChild(videoPlayerFrame);
-    // 将焦点移入iframe
-    videoPlayerFrame.focus();
-}
-
-// 关闭播放器页面
-function closeVideoPlayer(home = false) {
-    videoPlayerFrame = document.getElementById('VideoPlayerFrame');
-    if (videoPlayerFrame) {
-        videoPlayerFrame.remove();
-        // 恢复搜索结果显示
-        document.getElementById('resultsArea').classList.remove('hidden');
-        // 关闭播放器时也隐藏详情弹窗
-        const detailModal = document.getElementById('modal');
-        if (detailModal) {
-            detailModal.classList.add('hidden');
-        }
-        // 如果启用豆瓣区域则显示豆瓣区域
-        if (localStorage.getItem('doubanEnabled') === 'true') {
-            document.getElementById('doubanArea').classList.remove('hidden');
-        }
-    }
-    if (home) {
-        // 刷新主页
-        window.location.href = '/'
-    }
-}
+// 播放器已统一为整页跳转（watch.html → player.html），不再使用 iframe 弹层。
+// 旧 showVideoPlayer / closeVideoPlayer（iframe 机制）已删除：
+// - z-index 层级坑（iframe 被首页 topbar 盖住导致导航栏点击无反应）
+// - iframe 内导航 / window.parent 通信等兼容代码一并移除
 
 // 播放上一集
 function playPreviousEpisode(sourceCode) {
@@ -1085,16 +1039,13 @@ function handlePlayerError() {
     showToast('视频播放加载失败，请尝试其他视频源', 'error');
 }
 
-// 辅助函数用于渲染剧集按钮（使用当前的排序状态）
+// 辅助函数用于渲染剧集按钮
 function renderEpisodes(vodName, sourceCode, vodId) {
-    const episodes = episodesReversed ? [...currentEpisodes].reverse() : currentEpisodes;
-    return episodes.map((episode, index) => {
-        // 根据倒序状态计算真实的剧集索引
-        const realIndex = episodesReversed ? currentEpisodes.length - 1 - index : index;
+    return currentEpisodes.map((episode, index) => {
         return `
-            <button id="episode-${realIndex}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${realIndex}, '${vodId}')" 
+            <button id="episode-${index}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${index}, '${vodId}')" 
                     class="ep-item episode-btn">
-                ${realIndex + 1}
+                ${index + 1}
             </button>
         `;
     }).join('');
@@ -1102,33 +1053,12 @@ function renderEpisodes(vodName, sourceCode, vodId) {
 
 // 复制视频链接到剪贴板
 function copyLinks() {
-    const episodes = episodesReversed ? [...currentEpisodes].reverse() : currentEpisodes;
-    const linkList = episodes.join('\r\n');
+    const linkList = currentEpisodes.join('\r\n');
     navigator.clipboard.writeText(linkList).then(() => {
         showToast('播放链接已复制', 'success');
     }).catch(err => {
         showToast('复制失败，请检查浏览器权限', 'error');
     });
-}
-
-// 切换排序状态的函数
-function toggleEpisodeOrder(sourceCode, vodId) {
-    episodesReversed = !episodesReversed;
-    // 重新渲染剧集区域，使用 currentVideoTitle 作为视频标题
-    const episodesGrid = document.getElementById('episodesGrid');
-    if (episodesGrid) {
-        episodesGrid.innerHTML = renderEpisodes(currentVideoTitle, sourceCode, vodId);
-    }
-
-    // 更新按钮文本和箭头方向
-    const toggleBtn = document.querySelector(`button[onclick="toggleEpisodeOrder('${sourceCode}', '${vodId}')"]`);
-    if (toggleBtn) {
-        toggleBtn.querySelector('span').textContent = episodesReversed ? '正序排列' : '倒序排列';
-        const arrowIcon = toggleBtn.querySelector('svg');
-        if (arrowIcon) {
-            arrowIcon.style.transform = episodesReversed ? 'rotate(180deg)' : 'rotate(0deg)';
-        }
-    }
 }
 
 // 从URL导入配置

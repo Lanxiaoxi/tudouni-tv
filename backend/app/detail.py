@@ -18,6 +18,7 @@ from fastapi import HTTPException
 from .config import REQUEST_TIMEOUT, USER_AGENT
 from .security import validate_target_url
 from .sites import SITES
+from .textutil import normalize_remarks
 
 _client = httpx.AsyncClient(follow_redirects=True, timeout=REQUEST_TIMEOUT)
 
@@ -101,7 +102,7 @@ async def get_detail(
             "area": v.get("vod_area"),
             "director": v.get("vod_director"),
             "actor": v.get("vod_actor"),
-            "remarks": v.get("vod_remarks"),
+            "remarks": normalize_remarks(v.get("vod_remarks")),
             "source_name": source_name,
             "source_code": source_code,
         },

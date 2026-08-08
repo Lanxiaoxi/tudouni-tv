@@ -52,19 +52,15 @@ async function initWatchInfo() {
             descBox.style.display = 'block';
         }
 
-        // 主播放按钮
+        // 刷新播放按钮：点击刷新整个页面（重新加载当前视频）
         const playBtn = document.getElementById('btnPlayCurrent');
         if (playBtn && typeof currentEpisodeIndex !== 'undefined') {
             playBtn.style.display = 'inline-flex';
             playBtn.onclick = () => {
-                if (typeof playEpisode === 'function') playEpisode(currentEpisodeIndex);
-                else if (typeof currentVideoUrl === 'string' && currentVideoUrl) {
-                    window.location.href = 'watch.html?url=' + encodeURIComponent(currentVideoUrl) +
-                        '&title=' + encodeURIComponent(title) + '&source=' + encodeURIComponent(source);
-                }
+                window.location.reload();
             };
             if (currentEpisodes && currentEpisodes.length) {
-                playBtn.querySelector('span').textContent = currentEpisodes.length > 1 ? '立即播放' : '立即播放';
+                playBtn.querySelector('span').textContent = '刷新播放';
             }
         }
     } catch (e) {
