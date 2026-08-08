@@ -409,14 +409,43 @@ def count_videos() -> int:
         conn.close()
 
 
-def cleanup_videos(stale_days: int = 30) -> int:
-    """清理 N 天未更新的残留行（保持 videos 表为「最新内容索引」语义）。返回删除条数。"""
-    cutoff = time.time() - stale_days * 86400
+def get_history_source_vod_pairs() -> list[tuple[str, str]]:
+    """返回观看历史中去重后的 (source, vod_id) 对（用于清理 videos 时保护用户看过的内容）。"""
     conn = get_conn()
     try:
-        cur = conn.execute("DELETE FROM videos WHERE timestamp < ?", (int(cutoff),))
-        conn.commit()
-        return cur.rowcount
+        rows = conn.execute(
+            "SELECT DISTINCT source, vod_id FROM viewing_history "
+            "WHERE vod_id IS NOT NULL AND vod_id != ''"
+        ).fetchall()
+        return [(r["source"], r["vod_id"]) for r in rows]
+    finally:
+        conn.close()
+
+
+def cleanup_videos(stale_days: int = 30, protected: set[tuple[str, str]] | None = None) -> int:
+    """清理 N 天未更新的残留行（保持 videos 表为「最新内容索引」语义）。
+
+    protected: 受保护的 (source_key, vod_id) 集合——出现在任意用户观看历史里的内容即使过期也不删除。
+    返回删除条数。
+    """
+    cutoff = time.time() - stale_days * 86400
+    protected = protected or set()
+    conn = get_conn()
+    try:
+        # 候选：超过 cutoff 未更新的行
+        candidates = conn.execute(
+            "SELECT id, source, vod_id FROM videos WHERE timestamp < ?", (int(cutoff),)
+        ).fetchall()
+        # 过滤受保护的行（source 用 key 匹配）
+        to_delete = [
+            r["id"]
+            for r in candidates
+            if (str(r["source"]), str(r["vod_id"])) not in protected
+        ]
+        if to_delete:
+            conn.executemany("DELETE FROM videos WHERE id = ?", [(i,) for i in to_delete])
+            conn.commit()
+        return len(to_delete)
     finally:
         conn.close()
 

@@ -52,6 +52,13 @@ async def sync_all_sources(pages: int | None = None) -> dict:
 
     results = await asyncio.gather(*[sync_one(k, v) for k, v in sources])
     stats["items"] = sum(results)
-    # 清理 N 天未更新的残留（保持表为最新索引，防历史残留污染首页）
-    stats["cleaned"] = db.cleanup_videos(SYNC_STALE_DAYS)
+    # 清理 N 天未更新的残留，但保护「任意用户观看历史里出现过的内容」
+    # （viewing_history.source 存的是源中文名，需映射回 key 与 videos.source 匹配）
+    name_to_key = {site["name"]: key for key, site in SITES.items()}
+    protected: set[tuple[str, str]] = set()
+    for src_name, vod_id in db.get_history_source_vod_pairs():
+        key = name_to_key.get(src_name, src_name)  # 映射不到就按原样兜底
+        protected.add((key, str(vod_id)))
+    stats["cleaned"] = db.cleanup_videos(SYNC_STALE_DAYS, protected)
+    stats["protected"] = len(protected)
     return stats
