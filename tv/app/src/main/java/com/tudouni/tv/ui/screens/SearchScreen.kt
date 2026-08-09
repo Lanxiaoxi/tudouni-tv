@@ -176,7 +176,7 @@ fun SearchScreen(
             if (historyItems.isNotEmpty()) {
                 Text(
                     text = "最近搜索",
-                    style = TvType.RowTitle.copy(fontSize = 26.sp),
+                    style = TvType.RowTitle.copy(fontSize = 22.sp),
                     color = TvColors.TextSecondary,
                     modifier = Modifier.padding(horizontal = PageHorizontalPadding),
                 )
@@ -199,7 +199,7 @@ fun SearchScreen(
 
             Text(
                 text = "热门推荐",
-                style = TvType.RowTitle.copy(fontSize = 26.sp),
+                style = TvType.RowTitle.copy(fontSize = 22.sp),
                 color = TvColors.TextSecondary,
                 modifier = Modifier.padding(horizontal = PageHorizontalPadding),
             )
@@ -211,7 +211,7 @@ fun SearchScreen(
                     description = "稍后再来看看",
                 )
                 else -> LazyVerticalGrid(
-                    columns = GridCells.Adaptive(240.dp),
+                    columns = GridCells.Adaptive(200.dp),
                     state = gridState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
@@ -259,7 +259,7 @@ fun SearchScreen(
                     }
                     Spacer(Modifier.height(16.dp))
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(240.dp),
+                        columns = GridCells.Adaptive(200.dp),
                         state = gridState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(

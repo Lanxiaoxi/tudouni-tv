@@ -143,7 +143,7 @@ fun PlayerScreen(
             Spacer(Modifier.height(16.dp))
             Text(
                 text = item.vodName ?: "",
-                style = TvType.RowTitle.copy(fontSize = 30.sp),
+                style = TvType.RowTitle.copy(fontSize = 22.sp),
                 color = TvColors.TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -168,7 +168,7 @@ fun PlayerScreen(
         ) {
             Text(
                 text = "选集（${episodes.size}）",
-                style = TvType.RowTitle.copy(fontSize = 28.sp),
+                style = TvType.RowTitle.copy(fontSize = 24.sp),
                 color = TvColors.TextPrimary,
             )
             Spacer(Modifier.height(8.dp))

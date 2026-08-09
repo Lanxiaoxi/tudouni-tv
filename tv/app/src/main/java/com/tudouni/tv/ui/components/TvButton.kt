@@ -23,7 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvShapes
 import com.tudouni.tv.ui.theme.TvType
@@ -44,6 +46,7 @@ fun TvButton(
     style: TvButtonStyle = TvButtonStyle.Primary,
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null,
+    fontSize: TextUnit = 24.sp,
 ) {
     val shape = TvShapes.Button
     val interactionSource = remember { MutableInteractionSource() }
@@ -107,7 +110,7 @@ fun TvButton(
             }
             Text(
                 text = text,
-                style = TvType.ButtonLabel,
+                style = TvType.ButtonLabel.copy(fontSize = fontSize),
                 color = if (enabled) contentColor else TvColors.TextTertiary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

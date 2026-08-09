@@ -10,7 +10,7 @@ enum class NavPage(val label: String, val icon: String) {
     SERIES("剧集", "▤"),
     ANIME("动漫", "✦"),
     VARIETY("综艺", "◉"),
-    HISTORY("历史", "↺"),
+    HISTORY("历史观看", "↺"),
     SEARCH("搜索", "⌕"),
     SETTINGS("设置", "⚙"),
     ;

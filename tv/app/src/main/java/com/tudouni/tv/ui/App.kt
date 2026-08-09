@@ -66,6 +66,9 @@ fun App() {
 
     var screen by remember { mutableStateOf<Screen>(Screen.Loading) }
 
+    // 当前登录用户名（登录成功/启动恢复时赋值；主框架各页展示用）
+    var username by remember { mutableStateOf("") }
+
     // 主框架当前页（进程重建后恢复上次所在页；enum 需转字符串存储）
     var mainPageName by rememberSaveable { mutableStateOf(NavPage.HOME.name) }
     val mainPage = NavPage.valueOf(mainPageName)
@@ -77,6 +80,7 @@ fun App() {
             val u = authStore.username.first()
             if (!t.isNullOrEmpty()) {
                 ApiClient.configure(t)
+                username = u ?: ""
                 screen = Screen.Main(mainPage)
             } else {
                 screen = Screen.Login
@@ -93,8 +97,9 @@ fun App() {
 
         is Screen.Login -> LoginScreen(
             authStore = authStore,
-            onLoginSuccess = { token, username ->
+            onLoginSuccess = { token, name ->
                 ApiClient.configure(token)
+                username = name
                 mainPageName = NavPage.HOME.name
                 screen = Screen.Main(NavPage.HOME)
             }
@@ -108,7 +113,7 @@ fun App() {
             }
             MainFrame(
                 page = s.page,
-                username = "",
+                username = username,
                 onPageChange = { p ->
                     mainPageName = p.name
                     screen = Screen.Main(p)
@@ -118,7 +123,8 @@ fun App() {
                     screen = Screen.Player(item, url, episodes, episodeIndex, resumeMs)
                 },
                 onLogout = {
-                    // 退出登录：清 token，回到登录页
+                    // 退出登录：清 token/用户名，回到登录页
+                    username = ""
                     screen = Screen.Login
                 },
             )

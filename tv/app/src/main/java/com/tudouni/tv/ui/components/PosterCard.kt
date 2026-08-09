@@ -44,13 +44,13 @@ fun PosterCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.width(220.dp)) {
+    Column(modifier = modifier.width(118.dp)) {
         FocusableSurface(
             onClick = onClick,
             shape = TvShapes.Card,
             scale = 1.08f,
             modifier = Modifier
-                .width(220.dp)
+                .width(118.dp)
                 .aspectRatio(2f / 3f),
         ) { focused ->
             Box(Modifier.fillMaxSize()) {
@@ -60,40 +60,30 @@ fun PosterCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
-                // 底部渐变遮罩（保证评分/角标可读）
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, TvColors.PosterScrim),
-                                startY = 400f,
-                            )
-                        )
-                )
                 // 左下评分/角标（优先显示评分，无评分显示 remarks 角标）
+                // 注：小海报不叠加底部渐变遮罩（曾因 startY 固定 400px 超出高度把整卡蒙暗）
                 val badge = item.remarks
                 if (!badge.isNullOrBlank()) {
                     val isScore = badge.contains("★") || badge.contains("评分") || badge.contains("分")
                     if (isScore) {
                         Text(
                             text = badge,
-                            style = TvType.Caption.copy(fontWeight = FontWeight.Bold),
+                            style = TvType.Caption.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
                             color = TvColors.Score,
                             modifier = Modifier
                                 .align(Alignment.BottomStart)
-                                .padding(start = 12.dp, bottom = 10.dp),
+                                .padding(start = 8.dp, bottom = 6.dp),
                         )
                     } else {
                         Text(
                             text = badge.take(6),
-                            style = TvType.Caption,
+                            style = TvType.Caption.copy(fontSize = 14.sp),
                             color = Color.White,
                             modifier = Modifier
                                 .align(Alignment.TopStart)
-                                .padding(10.dp)
-                                .background(TvColors.Accent.copy(alpha = 0.9f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                .padding(6.dp)
+                                .background(TvColors.Accent.copy(alpha = 0.9f), RoundedCornerShape(5.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
                         )
                     }
                 }
@@ -103,10 +93,10 @@ fun PosterCard(
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             text = item.vodName ?: "",
-            style = TvType.PosterTitle,
+            style = TvType.PosterTitle.copy(fontSize = 18.sp),
             color = TvColors.TextPrimary,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -117,7 +107,8 @@ fun PosterCard(
         if (sub.isNotBlank()) {
             Text(
                 text = sub,
-                style = TvType.Caption,
+                // 副信息（来源·年份）约为片名（18sp）一半，取 12sp 保可读下限
+                style = TvType.Caption.copy(fontSize = 12.sp),
                 color = TvColors.TextTertiary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -139,7 +130,7 @@ fun PlayOverlay(modifier: Modifier = Modifier) {
     ) {
         Text(
             text = "▶",
-            style = TvType.DisplayTitle.copy(fontSize = 32.sp),
+            style = TvType.DisplayTitle.copy(fontSize = 28.sp),
             color = Color.White,
         )
     }

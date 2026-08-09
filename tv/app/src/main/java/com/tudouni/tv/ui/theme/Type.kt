@@ -7,72 +7,72 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * 字号阶梯（sp）—— 对应 TV 端设计方案 §2.1 尺寸换算表。
- * 10 英尺观看距离：正文下限 22sp，标题 34-56sp。
+ * 字号阶梯（sp）—— 对标主流 TV 应用（爱奇艺/腾讯视频 TV）的紧凑观感。
+ * 比早期「10 英尺理论」版更收敛：海报更大密度、标题 36-48、正文 22-26。
  */
 object TvType {
-    /** Hero 大标题 56sp / 900（Sora） */
+    /** Hero 大标题 48sp / 900（Sora） */
     val DisplayTitle = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Black,
-        fontSize = 56.sp,
+        fontSize = 48.sp,
         letterSpacing = 0.5.sp,
     )
 
-    /** 页面标题 40sp / 900 */
+    /** 页面标题 36sp / 900 */
     val PageTitle = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Black,
+        fontSize = 36.sp,
+    )
+
+    /** 内容行标题 30sp / 800 */
+    val RowTitle = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 30.sp,
+    )
+
+    /** 详情片名 40sp / 900 */
+    val DetailTitle = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Black,
         fontSize = 40.sp,
     )
 
-    /** 内容行标题 34sp / 800 */
-    val RowTitle = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 34.sp,
-    )
-
-    /** 详情片名 44sp / 900 */
-    val DetailTitle = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Black,
-        fontSize = 44.sp,
-    )
-
-    /** 正文大 28sp */
+    /** 正文大 26sp */
     val BodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 28.sp,
+        fontSize = 26.sp,
     )
 
-    /** 正文中 26sp */
+    /** 正文中 24sp */
     val BodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 26.sp,
+        fontSize = 24.sp,
     )
 
-    /** 按钮文字 26sp / 700 */
+    /** 按钮文字 24sp / 700 */
     val ButtonLabel = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 26.sp,
+        fontSize = 24.sp,
     )
 
-    /** 海报卡下方片名 28sp / 500 */
+    /** 海报卡下方片名 22sp / 500 */
     val PosterTitle = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
-        fontSize = 28.sp,
+        fontSize = 22.sp,
     )
 
-    /** 弱化信息 22sp（TV 端最小字号，仅非关键标注用） */
+    /** 弱化信息 20sp（仅非关键标注用） */
     val Caption = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 22.sp,
+        fontSize = 20.sp,
     )
 }
 

@@ -97,7 +97,7 @@ fun EmptyState(
             )
         }
         Spacer(Modifier.height(28.dp))
-        Text(text = title, style = TvType.PageTitle.copy(fontSize = 30.sp), color = TvColors.TextPrimary)
+        Text(text = title, style = TvType.PageTitle.copy(fontSize = 26.sp), color = TvColors.TextPrimary)
         if (!description.isNullOrBlank()) {
             Spacer(Modifier.height(12.dp))
             Text(

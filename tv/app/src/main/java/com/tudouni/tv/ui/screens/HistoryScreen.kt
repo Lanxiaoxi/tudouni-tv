@@ -149,7 +149,7 @@ fun HistoryScreen(
                         item(key = "group_$label") {
                             Text(
                                 text = label,
-                                style = TvType.RowTitle.copy(fontSize = 26.sp),
+                                style = TvType.RowTitle.copy(fontSize = 22.sp),
                                 color = TvColors.TextSecondary,
                                 modifier = Modifier
                                     .padding(horizontal = PageHorizontalPadding)

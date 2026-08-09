@@ -179,7 +179,7 @@ fun HomeScreen(
                                 onPlay = { playFirst(hero) },
                                 onDetail = { onOpenDetail(hero) },
                             )
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(6.dp))
                         }
                     }
                 }
@@ -188,7 +188,7 @@ fun HomeScreen(
                 if (latest.isNotEmpty()) {
                     item(key = "row_latest") {
                         Column {
-                            Spacer(Modifier.height(32.dp))
+                            Spacer(Modifier.height(24.dp))
                             ContentRow(
                                 title = "最新更新",
                                 items = latest,
@@ -202,7 +202,7 @@ fun HomeScreen(
                 if (movies.isNotEmpty()) {
                     item(key = "row_movie") {
                         Column {
-                            Spacer(Modifier.height(40.dp))
+                            Spacer(Modifier.height(28.dp))
                             ContentRow(
                                 title = "热播电影",
                                 items = movies,
@@ -216,7 +216,7 @@ fun HomeScreen(
                 if (series.isNotEmpty()) {
                     item(key = "row_series") {
                         Column {
-                            Spacer(Modifier.height(40.dp))
+                            Spacer(Modifier.height(28.dp))
                             ContentRow(
                                 title = "热门剧集",
                                 items = series,
@@ -230,7 +230,7 @@ fun HomeScreen(
                 if (anime.isNotEmpty()) {
                     item(key = "row_anime") {
                         Column {
-                            Spacer(Modifier.height(40.dp))
+                            Spacer(Modifier.height(28.dp))
                             ContentRow(
                                 title = "动漫番剧",
                                 items = anime,
@@ -244,7 +244,7 @@ fun HomeScreen(
                 if (variety.isNotEmpty()) {
                     item(key = "row_variety") {
                         Column {
-                            Spacer(Modifier.height(40.dp))
+                            Spacer(Modifier.height(28.dp))
                             ContentRow(
                                 title = "综艺",
                                 items = variety,
@@ -255,7 +255,7 @@ fun HomeScreen(
                         }
                     }
                 }
-                item(key = "bottom") { Spacer(Modifier.height(40.dp)) }
+                item(key = "bottom") { Spacer(Modifier.height(28.dp)) }
             }
         }
     }
@@ -273,8 +273,11 @@ private fun classifyType(typeName: String?): String {
 }
 
 /**
- * Hero 横幅（对应设计方案 §5.5）：全宽 16:9 区，左文字（badge+标题+评分+简介+主按钮）右海报图。
- * 默认焦点：立即播放（accent 主按钮，焦点白描边）。
+ * Hero 横幅（TV 大屏适配版）：全宽背景图 cover 铺满 + 文字层叠在左侧。
+ * 与 Web 端设计文档 §5.5 的 55:45 横列布局不同——TV 宽屏上"左文右图"会留大片空白
+ * （竖版海报在宽图区里 Crop 后两侧空），改为"全宽背景图 + 左下文字层"是 TV 应用
+ * （Netflix/YouTube TV）的标准做法，图自然铺满、比例稳定、文字叠加可读。
+ * 焦点默认：立即播放（accent 主按钮，焦点白描边）。
  */
 @Composable
 private fun HeroBanner(
@@ -284,92 +287,94 @@ private fun HeroBanner(
     onDetail: () -> Unit,
 ) {
     val shape = RoundedCornerShape(20.dp)
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(460.dp)
+            .height(380.dp)
             .padding(horizontal = 72.dp)
             .clip(shape)
             .background(TvColors.BgSurface),
     ) {
-        // 左：文字区 55%
+        // 背景海报：cover 铺满整个 Hero
+        AsyncImage(
+            model = resolveMediaUrl(item.pic),
+            contentDescription = item.vodName,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        // 左侧深色渐变遮罩：从左深到右透明，让左侧文字层在任意海报下都可读
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            TvColors.BgBase.copy(alpha = 0.92f),
+                            TvColors.BgBase.copy(alpha = 0.70f),
+                            TvColors.BgBase.copy(alpha = 0.15f),
+                            Color.Transparent,
+                        ),
+                        startX = 0f,
+                        endX = 1200f,
+                    )
+                ),
+        )
+        // 文字层：左中叠加，宽度限制 55% 不进图区右半（Hero 内字号整体比全局小一档）
         Column(
             modifier = Modifier
-                .weight(0.55f)
-                .padding(horizontal = 44.dp, vertical = 40.dp),
+                .align(Alignment.CenterStart)
+                .fillMaxWidth(0.55f)
+                .padding(48.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "TUDOUNI TV",
-                    style = TvType.Caption.copy(fontWeight = FontWeight.Bold),
+                    style = TvType.Caption.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold),
                     color = TvColors.Accent,
                 )
-                Spacer(Modifier.width(16.dp))
+                Spacer(Modifier.width(14.dp))
                 item.remarks?.let { r ->
                     if (r.isNotBlank()) {
                         Text(
                             text = r,
-                            style = TvType.Caption,
+                            style = TvType.Caption.copy(fontSize = 15.sp),
                             color = TvColors.Score,
                         )
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = item.vodName ?: "",
-                style = TvType.DisplayTitle.copy(fontSize = 48.sp),
+                style = TvType.DisplayTitle.copy(fontSize = 36.sp),
                 color = TvColors.TextPrimary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = listOfNotNull(item.typeName, item.year, item.area)
                     .joinToString(" · ")
                     .ifBlank { item.sourceName ?: "" },
-                style = TvType.BodyMedium,
+                style = TvType.BodyMedium.copy(fontSize = 18.sp),
                 color = TvColors.TextSecondary,
             )
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(20.dp))
             Row {
                 TvButton(
                     text = if (playing) "加载中…" else "立即播放",
                     onClick = onPlay,
                     enabled = !playing,
+                    fontSize = 18.sp,
                 )
-                Spacer(Modifier.width(20.dp))
+                Spacer(Modifier.width(16.dp))
                 TvButton(
                     text = "详情",
                     style = TvButtonStyle.Secondary,
                     onClick = onDetail,
+                    fontSize = 18.sp,
                 )
             }
-        }
-        // 右：海报图 45%
-        Box(
-            modifier = Modifier
-                .weight(0.45f)
-                .fillMaxHeight(),
-        ) {
-            AsyncImage(
-                model = resolveMediaUrl(item.pic),
-                contentDescription = item.vodName,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-            // 左侧淡出到纯色，与文字区衔接
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(TvColors.BgSurface, Color.Transparent),
-                            startX = 0f,
-                            endX = 400f,
-                        )
-                    ),
-            )
         }
     }
 }

@@ -44,7 +44,7 @@ fun TvDialog(
         ) {
             Text(
                 text = title,
-                style = TvType.PageTitle.copy(fontSize = 34.sp),
+                style = TvType.PageTitle.copy(fontSize = 28.sp),
                 color = if (danger) TvColors.Danger else TvColors.TextPrimary,
             )
             if (!message.isNullOrBlank()) {

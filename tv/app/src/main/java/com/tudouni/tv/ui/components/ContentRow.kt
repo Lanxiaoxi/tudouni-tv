@@ -24,11 +24,11 @@ import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
 
-/** 页面左右安全边距（TV 端 72dp，设计方案 §2.3）。 */
-val PageHorizontalPadding = 72.dp
+/** 页面左右安全边距（对标主流 TV app，56dp）。 */
+val PageHorizontalPadding = 56.dp
 
 /** 内容行内卡片间距。 */
-val RowCardSpacing = 20.dp
+val RowCardSpacing = 16.dp
 
 /**
  * 内容行（对应设计方案 §5.3）：行标题（琥珀竖条 + 34sp/800，不可聚焦）+ 横向 PosterCard 列表。

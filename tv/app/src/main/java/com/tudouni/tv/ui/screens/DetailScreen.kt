@@ -253,7 +253,7 @@ fun DetailScreen(
                             Spacer(Modifier.height(32.dp))
                             Text(
                                 text = "选集（${episodes.size}）",
-                                style = TvType.RowTitle.copy(fontSize = 28.sp),
+                                style = TvType.RowTitle.copy(fontSize = 24.sp),
                                 color = TvColors.TextPrimary,
                             )
                             if (episodes.isEmpty()) {

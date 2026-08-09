@@ -123,7 +123,7 @@ private fun SettingsGroup(title: String, content: @Composable () -> Unit) {
     ) {
         Text(
             text = title,
-            style = TvType.RowTitle.copy(fontSize = 26.sp),
+            style = TvType.RowTitle.copy(fontSize = 22.sp),
             color = TvColors.Accent,
         )
         Spacer(Modifier.height(16.dp))

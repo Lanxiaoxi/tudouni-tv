@@ -46,9 +46,8 @@ import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
 import kotlinx.coroutines.launch
 
-/** 分类选项（null = 全部），与 /api/vodlist cat 参数对齐。 */
-private val CAT_OPTIONS = listOf<Pair<String?, String>>(
-    null to "全部",
+/** cat 参数 → 中文名（与 /api/vodlist cat 参数对齐）。 */
+private val CAT_LABELS = mapOf(
     "movie" to "电影",
     "series" to "剧集",
     "anime" to "动漫",
@@ -56,9 +55,10 @@ private val CAT_OPTIONS = listOf<Pair<String?, String>>(
 )
 
 /**
- * 分类浏览页（对应设计方案 §6.2）：分类 chips + 海报网格 + 加载更多。
- * 数据走 /api/vodlist?cat=&pg=（镜像表毫秒级，分页 24/页）。
- * 焦点流：分类 chip → 网格首卡 → 网格内方向键 → 加载更多。
+ * 分类浏览页：左侧导航已选一级分类（电影/剧集/动漫/综艺），
+ * 页内 chips 展示该分类下的**二级细分类型**（从已加载数据的 type_name 聚合，如
+ * 电影 → 动作片/喜剧片/爱情片…），选中后本地过滤。数据走 /api/vodlist?cat=&pg=。
+ * 焦点流：细分 chip → 网格首卡 → 网格内方向键 → 加载更多。
  */
 @Composable
 fun CategoryScreen(
@@ -75,6 +75,10 @@ fun CategoryScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableStateOf(0) }
     val gridState = rememberLazyGridState()
+
+    // 二级细分类型（从已加载数据聚合，按出现频次取 top 10）+ 当前选中的细分
+    var subCats by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedSub by remember { mutableStateOf<String?>(null) }
 
     suspend fun load(pageToLoad: Int, isFirst: Boolean) {
         if (isFirst) {
@@ -106,12 +110,26 @@ fun CategoryScreen(
         }
     }
 
-    // 切换分类 → 重载第一页
+    // 切换分类 → 重载第一页（并清空细分选择）
     LaunchedEffect(cat, retryKey) {
         items = emptyList()
+        selectedSub = null
         page = 1
         load(1, isFirst = true)
     }
+
+    // 已加载数据变化 → 重新聚合细分类型
+    LaunchedEffect(items) {
+        val freq = linkedMapOf<String, Int>()
+        items.forEach { item ->
+            val t = item.typeName?.trim()
+            if (!t.isNullOrBlank()) freq[t] = (freq[t] ?: 0) + 1
+        }
+        subCats = freq.entries.sortedByDescending { it.value }.take(10).map { it.key }
+    }
+
+    // 当前显示列表（选中细分时本地过滤）
+    val displayItems = if (selectedSub == null) items else items.filter { it.typeName == selectedSub }
 
     // 滚动到接近末尾 → 自动加载下一页
     val hasMore = items.size < total
@@ -144,12 +162,12 @@ fun CategoryScreen(
             )
             Spacer(Modifier.width(14.dp))
             Text(
-                text = CAT_OPTIONS.first { it.first == cat }.second,
+                text = CAT_LABELS[cat] ?: "全部",
                 style = TvType.PageTitle,
                 color = TvColors.TextPrimary,
             )
             Spacer(Modifier.width(20.dp))
-            if (!loadingFirst && items.isNotEmpty()) {
+            if (!loadingFirst && displayItems.isNotEmpty()) {
                 Text(
                     text = "共 $total 部",
                     style = TvType.BodyMedium,
@@ -158,17 +176,24 @@ fun CategoryScreen(
             }
         }
 
-        // 分类 chips（横向）
+        // 二级细分 chips（全部 + 该分类下的细分类型）
         LazyRow(
             contentPadding = PaddingValues(horizontal = PageHorizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            items(CAT_OPTIONS.size) { i ->
-                val (value, label) = CAT_OPTIONS[i]
+            item(key = "sub_all") {
+                TvChip(
+                    text = "全部",
+                    selected = selectedSub == null,
+                    onClick = { selectedSub = null },
+                )
+            }
+            items(subCats.size, key = { "sub_$it" }) { i ->
+                val label = subCats[i]
                 TvChip(
                     text = label,
-                    selected = cat == value,
-                    onClick = { cat = value },
+                    selected = selectedSub == label,
+                    onClick = { selectedSub = label },
                 )
             }
         }
@@ -190,7 +215,7 @@ fun CategoryScreen(
             )
 
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(240.dp),
+                columns = GridCells.Adaptive(200.dp),
                 state = gridState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
@@ -201,7 +226,7 @@ fun CategoryScreen(
                 horizontalArrangement = Arrangement.spacedBy(RowCardSpacing),
                 verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
-                items(items, key = { it.vodId ?: "${it.sourceCode}_${it.hashCode()}" }) { item ->
+                items(displayItems, key = { it.vodId ?: "${it.sourceCode}_${it.hashCode()}" }) { item ->
                     PosterCard(item = item, onClick = { onOpenDetail(item) })
                 }
                 // 网格末尾：加载更多 / 已全部
