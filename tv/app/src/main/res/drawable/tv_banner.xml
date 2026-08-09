@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV banner（横向 320x180 比例）：深色底 + 播放三角 + 圆点 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path
+        android:fillColor="#1A1A22"
+        android:pathData="M0,0 L320,0 L320,180 L0,180 Z" />
+    <path
+        android:fillColor="#23ADE5"
+        android:pathData="M120,60 L185,90 L120,120 Z" />
+    <path
+        android:fillColor="#23ADE5"
+        android:pathData="M214,60 m-5,0 a5,5 0 1 1 10,0 a5,5 0 1 1 -10,0" />
+</vector>
