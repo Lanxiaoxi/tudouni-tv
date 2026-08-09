@@ -215,7 +215,7 @@ fun CategoryScreen(
             )
 
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(200.dp),
+                columns = GridCells.Adaptive(140.dp),
                 state = gridState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(

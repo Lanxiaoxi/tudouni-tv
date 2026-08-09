@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvShapes
 import com.tudouni.tv.ui.theme.TvType
@@ -85,7 +86,7 @@ fun TvChip(
     ) {
         Text(
             text = text,
-            style = TvType.BodyMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+            style = TvType.BodyMedium.copy(fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
             color = contentColor,
         )
     }

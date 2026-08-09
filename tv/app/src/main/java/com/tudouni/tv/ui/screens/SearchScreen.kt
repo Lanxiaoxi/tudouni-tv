@@ -211,7 +211,7 @@ fun SearchScreen(
                     description = "稍后再来看看",
                 )
                 else -> LazyVerticalGrid(
-                    columns = GridCells.Adaptive(200.dp),
+                    columns = GridCells.Adaptive(140.dp),
                     state = gridState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
@@ -259,7 +259,7 @@ fun SearchScreen(
                     }
                     Spacer(Modifier.height(16.dp))
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(200.dp),
+                        columns = GridCells.Adaptive(140.dp),
                         state = gridState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
