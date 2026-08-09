@@ -21,10 +21,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tudouni.tv.BuildConfig
 import com.tudouni.tv.data.ApiClient
 import com.tudouni.tv.data.AuthStore
 import com.tudouni.tv.ui.components.TvButton
@@ -48,6 +50,10 @@ fun SettingsScreen(
     val authStore = remember { AuthStore(context) }
     val scope = rememberCoroutineScope()
     var showLogoutConfirm by remember { mutableStateOf(false) }
+
+    // 初始焦点：给「退出登录」按钮（Compose 不自动聚焦，否则整页方向键不工作）
+    val logoutFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { logoutFocus.requestFocus() }
 
     Column(
         modifier = Modifier
@@ -77,6 +83,7 @@ fun SettingsScreen(
                 text = "退出登录",
                 style = com.tudouni.tv.ui.components.TvButtonStyle.Secondary,
                 onClick = { showLogoutConfirm = true },
+                modifier = Modifier.focusRequester(logoutFocus),
             )
         }
 
@@ -84,7 +91,7 @@ fun SettingsScreen(
 
         // 分组：说明
         SettingsGroup(title = "关于") {
-            SettingsRow(label = "版本", value = "0.1.0")
+            SettingsRow(label = "版本", value = BuildConfig.VERSION_NAME)
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "播放进度保存在服务端，换设备登录同一账号即可继续观看。",

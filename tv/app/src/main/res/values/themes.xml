@@ -3,6 +3,7 @@
     <!-- 纯系统主题（Compose 应用不需要 AppCompat），TV 深色背景 -->
     <style name="Theme.TudouniTV" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/tv_background</item>
-        <item name="android:colorAccent">#23ADE5</item>
+        <!-- L9：与品牌琥珀 #FFB020 对齐（原 #23ADE5 蓝色与全站主题不一致） -->
+        <item name="android:colorAccent">#FFB020</item>
     </style>
 </resources>

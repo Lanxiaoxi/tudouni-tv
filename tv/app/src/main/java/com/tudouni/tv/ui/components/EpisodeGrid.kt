@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -47,6 +48,7 @@ import com.tudouni.tv.ui.theme.TvType
  * - 默认：--bg-elevated + 次级字；当前集：accent 底 + 深字（800）
  * - 焦点：scale 1.08 + 白描边（当前集）/ accent 描边（普通项）—— 已选中 ≠ 焦点所在，视觉可区分
  * - 方向键网格移动；数字键 0-9 直接跳集（1-9 → 1-9 集，0 → 第 10 集）；滚动跟随
+ * - [initialFocusIndex]：进入页面时滚动到该集并请求焦点（播放页/详情页恢复进度后直接聚焦当前集）
  */
 @Composable
 fun EpisodeGrid(
@@ -54,12 +56,24 @@ fun EpisodeGrid(
     currentIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    initialFocusIndex: Int? = null,
 ) {
     val gridState = rememberLazyGridState()
 
     // 当前集变化（换源/恢复进度）时滚动到可视区
     LaunchedEffect(currentIndex) {
         if (count > 0) gridState.scrollToItem(currentIndex.coerceIn(0, count - 1))
+    }
+
+    // 进入页面：滚动到指定集并聚焦（等滚动完成 + item 组合后请求焦点）
+    val initialFocusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(initialFocusIndex) {
+        val target = initialFocusIndex ?: return@LaunchedEffect
+        if (count > 0) {
+            gridState.scrollToItem(target.coerceIn(0, count - 1))
+            kotlinx.coroutines.delay(180)
+            initialFocusRequester.requestFocus()
+        }
     }
 
     // 数字 → 集序号（1-based），越界忽略
@@ -108,6 +122,7 @@ fun EpisodeGrid(
                 index = index,
                 isCurrent = index == currentIndex,
                 onClick = { onSelect(index) },
+                modifier = if (index == initialFocusIndex) Modifier.focusRequester(initialFocusRequester) else Modifier,
             )
         }
     }
@@ -118,6 +133,7 @@ private fun EpisodeCell(
     index: Int,
     isCurrent: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val shape = TvShapes.Episode
     val interactionSource = remember { MutableInteractionSource() }
@@ -147,7 +163,7 @@ private fun EpisodeCell(
     }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .width(96.dp)
             .height(64.dp)
             .graphicsLayer {

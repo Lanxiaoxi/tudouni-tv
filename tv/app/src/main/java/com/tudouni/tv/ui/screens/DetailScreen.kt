@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,6 +39,7 @@ import coil.compose.AsyncImage
 import com.tudouni.tv.data.ApiClient
 import com.tudouni.tv.data.DetailResponse
 import com.tudouni.tv.data.HistoryItem
+import com.tudouni.tv.data.SourceSwitcher
 import com.tudouni.tv.data.TvRepository
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.data.errorMessage
@@ -48,28 +49,38 @@ import com.tudouni.tv.ui.components.EmptyState
 import com.tudouni.tv.ui.components.FullScreenLoading
 import com.tudouni.tv.ui.components.TvButton
 import com.tudouni.tv.ui.components.TvButtonStyle
+import com.tudouni.tv.ui.components.TvChip
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * 详情页（对应设计方案 §6.4，全屏 L3 页）：
  * - 左：海报 300×450dp + 主操作（立即播放/继续播放）
  * - 右：片名 44sp/900 → 类型/年份/地区 tags → 简介 → 选集网格（0-9 跳集，当前集 accent 高亮）
  * - 进度记忆：并行拉 /api/history，恢复上次播放集与进度（跨设备断点续播的恢复入口）
- * - 焦点默认：播放主按钮；左上返回按钮始终可聚焦
+ * - M5 修复：同片名其他来源探测 → 「其他来源」chips，点击换源重新拉详情
+ * - L4 修复：加载完成后才请求播放按钮焦点（避免 loading 期 requestFocus 落空）
  */
 @Composable
 fun DetailScreen(
     item: VideoItem,
     onBack: () -> Unit,
-    onPlay: (url: String, episodes: List<String>, episodeIndex: Int, resumeMs: Long) -> Unit,
+    onPlay: (item: VideoItem, url: String, episodes: List<String>, episodeIndex: Int, resumeMs: Long) -> Unit,
 ) {
     BackHandler(onBack = onBack)
 
+    // 当前条目（换源后更新 sourceCode/sourceName/vodId）
+    var currentItem by remember { mutableStateOf(item) }
     var detail by remember { mutableStateOf<DetailResponse?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var history by remember { mutableStateOf<HistoryItem?>(null) }
+    // M5：其他可用来源（同片名探测结果）
+    var altSources by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var switchingSource by remember { mutableStateOf(false) }
 
     // 当前选中的集（0-based；恢复进度后落在上次播放集）
     var currentIndex by remember { mutableStateOf(0) }
@@ -78,31 +89,40 @@ fun DetailScreen(
     var hasResume by remember { mutableStateOf(false) }
 
     val playFocusRequester = remember { FocusRequester() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-    LaunchedEffect(item.vodId, item.sourceCode) {
-        loading = true
-        error = null
-        try {
-            val resp = ApiClient.get().detail(id = item.vodId ?: "", source = item.sourceCode)
-            if (resp.isSuccessful) {
-                val body = resp.body()
-                if (body != null && (body.code == 200 || body.code == 0)) {
-                    detail = body
-                } else {
-                    error = "获取详情失败"
+    // 加载详情 + 恢复进度（并行）+ 探测其他源（失败均不影响主体展示）
+    suspend fun loadDetailAndHistory(target: VideoItem) {
+        coroutineScope {
+            val detailDeferred = async {
+                try {
+                    val resp = ApiClient.get().detail(id = target.vodId ?: "", source = target.sourceCode)
+                    if (resp.isSuccessful) resp.body() else null
+                } catch (_: Exception) {
+                    null
                 }
-            } else {
-                error = resp.errorMessage()
             }
-        } catch (e: Exception) {
-            error = "网络错误: ${e.message}"
-        }
-
-        // 并行恢复进度（失败不影响详情展示）
-        try {
-            val h = TvRepository.findHistory(item.vodId, item.sourceCode)
+            val historyDeferred = async {
+                try {
+                    TvRepository.findHistory(target.vodId, target.sourceCode)
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            val altDeferred = async {
+                try {
+                    SourceSwitcher.findAlternatives(target.vodName, target.sourceCode)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+            val d = detailDeferred.await()
+            val h = historyDeferred.await()
+            val alts = altDeferred.await()
+            detail = d
             history = h
-            val eps = detail?.episodes ?: emptyList()
+            altSources = alts
+            val eps = d?.episodes ?: emptyList()
             val histIndex = h?.episodeIndex ?: 0
             val histPosMs = ((h?.position ?: 0.0) * 1000).toLong()
             val histDurMs = ((h?.duration ?: 0.0) * 1000).toLong()
@@ -113,15 +133,42 @@ fun DetailScreen(
                 resumeMs = histPosMs
                 hasResume = true
             }
-        } catch (_: Exception) {
         }
+    }
 
+    LaunchedEffect(item.vodId, item.sourceCode) {
+        loading = true
+        error = null
+        loadDetailAndHistory(currentItem)
+        if (detail == null) error = "获取详情失败"
         loading = false
     }
 
-    // 进入页面焦点落在播放主按钮
-    LaunchedEffect(Unit) {
-        playFocusRequester.requestFocus()
+    // L4：加载完成（且详情可用）后才请求播放按钮焦点
+    LaunchedEffect(loading, detail) {
+        if (!loading && detail != null) {
+            playFocusRequester.requestFocus()
+        }
+    }
+
+    // M5：切换到其他来源
+    fun switchToSource(alt: VideoItem) {
+        if (switchingSource) return
+        scope.launch {
+            switchingSource = true
+            try {
+                currentItem = alt
+                detail = null
+                error = null
+                currentIndex = 0
+                resumeMs = 0L
+                hasResume = false
+                loadDetailAndHistory(alt)
+                if (detail == null) error = "该来源暂无内容"
+            } finally {
+                switchingSource = false
+            }
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -176,9 +223,11 @@ fun DetailScreen(
                                     .border(1.dp, TvColors.LineStrong, RoundedCornerShape(16.dp)),
                             ) {
                                 AsyncImage(
-                                    model = resolveMediaUrl(info?.cover ?: item.pic),
-                                    contentDescription = info?.title ?: item.vodName,
+                                    model = resolveMediaUrl(info?.cover ?: currentItem.pic),
+                                    contentDescription = info?.title ?: currentItem.vodName,
                                     contentScale = ContentScale.Crop,
+                                    placeholder = ColorPainter(TvColors.BgElevated),
+                                    error = ColorPainter(TvColors.BgElevated),
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -194,6 +243,7 @@ fun DetailScreen(
                                     val url = episodes.getOrNull(currentIndex)
                                     if (url != null) {
                                         onPlay(
+                                            currentItem,
                                             url,
                                             episodes,
                                             currentIndex,
@@ -201,18 +251,39 @@ fun DetailScreen(
                                         )
                                     }
                                 },
-                                enabled = episodes.isNotEmpty(),
+                                enabled = episodes.isNotEmpty() && !switchingSource,
                                 modifier = Modifier
                                     .width(300.dp)
                                     .focusRequester(playFocusRequester),
                             )
+                            // M5：其他来源（同片名探测）
+                            if (altSources.isNotEmpty()) {
+                                Spacer(Modifier.height(18.dp))
+                                Text(
+                                    text = "其他来源",
+                                    style = TvType.Caption.copy(fontSize = 18.sp),
+                                    color = TvColors.TextTertiary,
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    altSources.forEach { alt ->
+                                        TvButton(
+                                            text = if (switchingSource) "切换中…" else "切换到 ${alt.sourceName ?: alt.sourceCode}",
+                                            style = TvButtonStyle.Secondary,
+                                            enabled = !switchingSource,
+                                            onClick = { switchToSource(alt) },
+                                            modifier = Modifier.width(300.dp),
+                                        )
+                                    }
+                                }
+                            }
                         }
                         Spacer(Modifier.width(40.dp))
 
                         // 右：信息 + 选集
                         Column(Modifier.weight(1f)) {
                             Text(
-                                text = info?.title ?: item.vodName ?: "",
+                                text = info?.title ?: currentItem.vodName ?: "",
                                 style = TvType.DetailTitle,
                                 color = TvColors.TextPrimary,
                                 maxLines = 2,
@@ -226,9 +297,10 @@ fun DetailScreen(
                                     info?.area,
                                     info?.sourceName,
                                 ).filter { it.isNotBlank() }.forEach { tag ->
+                                    // U12：TV 远距离观看，tag 字号从 20sp 提到 22sp
                                     Text(
                                         text = tag,
-                                        style = TvType.Caption.copy(fontWeight = FontWeight.Medium),
+                                        style = TvType.Caption.copy(fontSize = 22.sp, fontWeight = FontWeight.Medium),
                                         color = TvColors.TextSecondary,
                                         modifier = Modifier
                                             .padding(end = 12.dp)
@@ -259,7 +331,7 @@ fun DetailScreen(
                             if (episodes.isEmpty()) {
                                 Spacer(Modifier.height(16.dp))
                                 Text(
-                                    text = "暂无可用播放地址，试试其他来源",
+                                    text = if (altSources.isNotEmpty()) "当前来源暂无播放地址，可用左侧「其他来源」切换" else "暂无可用播放地址",
                                     style = TvType.BodyMedium,
                                     color = TvColors.TextTertiary,
                                 )
@@ -273,6 +345,7 @@ fun DetailScreen(
                                         val url = episodes.getOrNull(index)
                                         if (url != null) {
                                             onPlay(
+                                                currentItem,
                                                 url,
                                                 episodes,
                                                 index,

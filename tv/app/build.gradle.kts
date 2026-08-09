@@ -36,6 +36,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // SettingsScreen 展示版本号（BuildConfig.VERSION_NAME）
+        buildConfig = true
     }
 }
 
@@ -48,13 +50,13 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
 
+    // ---- 协程（显式声明，业务代码直接使用 launch/Dispatchers.IO/flow）----
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
     // ---- 播放：Media3 ExoPlayer（HLS 扩展必须）----
     implementation("androidx.media3:media3-exoplayer:1.5.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.0")
     implementation("androidx.media3:media3-ui:1.5.0")
-
-    // ---- Android TV Material 1.0 稳定：TvCard 自带 TV 焦点 indication（缩放/边框/光晕）----
-    implementation("androidx.tv:tv-material:1.0.0")
 
     // ---- 网络：Retrofit + Gson，对接现有 FastAPI 后端 ----
     implementation("com.squareup.retrofit2:retrofit:2.11.0")

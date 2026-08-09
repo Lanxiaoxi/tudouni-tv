@@ -35,6 +35,7 @@ import com.tudouni.tv.ui.screens.LoginScreen
 import com.tudouni.tv.ui.screens.PlayerScreen
 import com.tudouni.tv.ui.screens.SearchScreen
 import com.tudouni.tv.ui.screens.SettingsScreen
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 
 /**
@@ -73,11 +74,10 @@ fun App() {
     var mainPageName by rememberSaveable { mutableStateOf(NavPage.HOME.name) }
     val mainPage = NavPage.valueOf(mainPageName)
 
-    // 启动：读取已保存的登录态
+    // 启动：读取已保存的登录态（token 与 username 并行读，减少 Loading 时长）
     LaunchedEffect(Unit) {
         if (screen is Screen.Loading) {
-            val t = authStore.token.first()
-            val u = authStore.username.first()
+            val (t, u) = combine(authStore.token, authStore.username) { token, name -> token to name }.first()
             if (!t.isNullOrEmpty()) {
                 ApiClient.configure(t)
                 username = u ?: ""
@@ -133,8 +133,9 @@ fun App() {
         is Screen.Detail -> DetailScreen(
             item = s.item,
             onBack = { goMain() },
-            onPlay = { url, episodes, episodeIndex, resumeMs ->
-                screen = Screen.Player(s.item, url, episodes, episodeIndex, resumeMs)
+            // M5：换源后 onPlay 携带最新 item（sourceCode/vodId 可能已变）
+            onPlay = { newItem, url, episodes, episodeIndex, resumeMs ->
+                screen = Screen.Player(newItem, url, episodes, episodeIndex, resumeMs)
             },
         )
 

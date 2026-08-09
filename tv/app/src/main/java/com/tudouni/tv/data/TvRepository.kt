@@ -1,7 +1,10 @@
 package com.tudouni.tv.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 /**
  * 业务仓库：进度记忆（跨设备断点续播）的读写封装。
@@ -20,11 +23,16 @@ object TvRepository {
     /** 距片尾小于该值视为「已看完」，从头开始。 */
     const val RESUME_TAIL_MARGIN_MS = 30_000L
 
+    /** 串行化进度上报：避免 10s 轮询与手动上报并发导致乱序（旧进度覆盖新进度）。 */
+    private val reportMutex = Mutex()
+
     /**
      * 播放进度上报（PUT /api/history）。
      * @param episodes 当前剧集的 m3u8 地址列表（存回服务端供跨设备续播用）
      * @param positionMs 当前播放位置毫秒
-     * @param durationMs 总时长毫秒（<=0 不上报，拿不到时长的流不写进度）
+     * @param durationMs 总时长毫秒
+     * @param force 为 true 时即使 duration<=0 也上报（换集标记场景：仅更新集数，进度归零）
+     * 正常播放进度在拿不到时长（duration<=0）时不上报，避免把未知时长写成 0。
      */
     suspend fun reportProgress(
         item: VideoItem,
@@ -33,31 +41,41 @@ object TvRepository {
         positionMs: Long,
         durationMs: Long,
         timestamp: Long = System.currentTimeMillis() / 1000,
+        force: Boolean = false,
     ): Boolean = withContext(Dispatchers.IO) {
-        if (durationMs <= 0 || item.vodName.isNullOrBlank()) return@withContext false
-        val resp = ApiClient.get().putHistory(
-            mapOf(
-                "title" to item.vodName,
-                "vod_id" to (item.vodId ?: ""),
-                "source" to (item.sourceCode ?: ""),
-                "pic" to (item.pic ?: ""),
-                "episodes" to episodes,
-                "episode_index" to episodeIndex,
-                "position" to (positionMs / 1000.0),
-                "duration" to (durationMs / 1000.0),
-                "timestamp" to timestamp,
+        if (durationMs <= 0 && !force) return@withContext false
+        if (item.vodName.isNullOrBlank()) return@withContext false
+        reportMutex.withLock {
+            val resp = ApiClient.get().putHistory(
+                mapOf(
+                    "title" to item.vodName,
+                    "vod_id" to (item.vodId ?: ""),
+                    "source" to (item.sourceCode ?: ""),
+                    "pic" to (item.pic ?: ""),
+                    "episodes" to episodes,
+                    "episode_index" to episodeIndex,
+                    "position" to (positionMs / 1000.0),
+                    "duration" to (durationMs / 1000.0),
+                    "timestamp" to timestamp,
+                )
             )
-        )
-        resp.isSuccessful
+            resp.isSuccessful
+        }
     }
 
-    /** 拉取观看历史（最新在前）。 */
+    /**
+     * 拉取观看历史（最新在前）。
+     * @throws IOException 网络/服务端错误时抛出（由页面区分「空历史」与「加载失败」）
+     */
     suspend fun fetchHistory(limit: Int = 100): List<HistoryItem> = withContext(Dispatchers.IO) {
         val resp = ApiClient.get().history(limit)
         if (resp.isSuccessful) {
             val body = resp.body()
-            if (body != null && body.code == 0 && body.data != null) body.data.items else emptyList()
-        } else emptyList()
+            if (body != null && body.code == 0 && body.data != null) body.data.items
+            else throw IOException(body?.message ?: "获取历史失败（HTTP ${resp.code()}）")
+        } else {
+            throw IOException(resp.errorMessage())
+        }
     }
 
     /** 按 (vod_id, source) 在历史中找记录（用于进入详情/播放页时恢复进度）。 */
@@ -94,12 +112,19 @@ object TvRepository {
 
     // ---------- 搜索历史 ----------
 
+    /**
+     * 拉取搜索历史。
+     * @throws IOException 网络/服务端错误时抛出（由页面区分「空」与「失败」）
+     */
     suspend fun fetchSearchHistory(limit: Int = 30): List<SearchHistoryItem> = withContext(Dispatchers.IO) {
         val resp = ApiClient.get().searchHistory(limit)
         if (resp.isSuccessful) {
             val body = resp.body()
-            if (body != null && body.code == 0 && body.data != null) body.data.items else emptyList()
-        } else emptyList()
+            if (body != null && body.code == 0 && body.data != null) body.data.items
+            else throw IOException(body?.message ?: "获取搜索历史失败（HTTP ${resp.code()}）")
+        } else {
+            throw IOException(resp.errorMessage())
+        }
     }
 
     suspend fun addSearchHistory(keyword: String): Boolean = withContext(Dispatchers.IO) {

@@ -27,8 +27,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,6 +73,15 @@ fun HomeScreen(
     // Hero「立即播放」需要先拉详情拿第一集地址
     var heroPlaying by remember { mutableStateOf(false) }
 
+    // 初始焦点：Compose 不会自动聚焦第一个控件，必须显式请求，
+    // 否则整页方向键焦点导航不工作。加载完成后把焦点给 Hero「立即播放」。
+    val heroPlayFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(loading, items.isEmpty()) {
+        if (!loading && items.isNotEmpty()) {
+            heroPlayFocus.requestFocus()
+        }
+    }
+
     LaunchedEffect(retryKey) {
         loading = true
         error = null
@@ -94,12 +105,16 @@ fun HomeScreen(
         }
     }
 
-    // 客户端分组（与后端 classify_type 同逻辑）
-    val latest = items.take(12)
-    val movies = items.filter { classifyType(it.typeName) == "movie" }.take(8)
-    val series = items.filter { classifyType(it.typeName) == "series" }.take(8)
-    val anime = items.filter { classifyType(it.typeName) == "anime" }.take(8)
-    val variety = items.filter { classifyType(it.typeName) == "variety" }.take(8)
+    // 客户端分组（与后端 classify_type 同逻辑）；L7：remember 缓存，避免每帧重组重算
+    val groups = remember(items) {
+        HomeGroups(
+            latest = items.take(12),
+            movies = items.filter { classifyType(it.typeName) == "movie" }.take(8),
+            series = items.filter { classifyType(it.typeName) == "series" }.take(8),
+            anime = items.filter { classifyType(it.typeName) == "anime" }.take(8),
+            variety = items.filter { classifyType(it.typeName) == "variety" }.take(8),
+        )
+    }
 
     fun playFirst(item: VideoItem) {
         if (heroPlaying) return
@@ -178,34 +193,35 @@ fun HomeScreen(
                                 playing = heroPlaying,
                                 onPlay = { playFirst(hero) },
                                 onDetail = { onOpenDetail(hero) },
+                                playFocusRequester = heroPlayFocus,
                             )
-                            Spacer(Modifier.height(6.dp))
+                            // U7：Hero 与下方内容行拉开视觉间距
+                            Spacer(Modifier.height(24.dp))
                         }
                     }
                 }
 
                 // 内容行
-                if (latest.isNotEmpty()) {
+                if (groups.latest.isNotEmpty()) {
                     item(key = "row_latest") {
                         Column {
                             Spacer(Modifier.height(24.dp))
+                            // L12：最新更新无对应分类页，「更多」按钮原跳 HOME 自身无效 → 去掉
                             ContentRow(
                                 title = "最新更新",
-                                items = latest,
+                                items = groups.latest,
                                 onClickItem = onOpenDetail,
-                                showMore = true,
-                                onMore = { onOpenCategory(NavPage.HOME) },
                             )
                         }
                     }
                 }
-                if (movies.isNotEmpty()) {
+                if (groups.movies.isNotEmpty()) {
                     item(key = "row_movie") {
                         Column {
                             Spacer(Modifier.height(28.dp))
                             ContentRow(
                                 title = "热播电影",
-                                items = movies,
+                                items = groups.movies,
                                 onClickItem = onOpenDetail,
                                 showMore = true,
                                 onMore = { onOpenCategory(NavPage.MOVIE) },
@@ -213,13 +229,13 @@ fun HomeScreen(
                         }
                     }
                 }
-                if (series.isNotEmpty()) {
+                if (groups.series.isNotEmpty()) {
                     item(key = "row_series") {
                         Column {
                             Spacer(Modifier.height(28.dp))
                             ContentRow(
                                 title = "热门剧集",
-                                items = series,
+                                items = groups.series,
                                 onClickItem = onOpenDetail,
                                 showMore = true,
                                 onMore = { onOpenCategory(NavPage.SERIES) },
@@ -227,13 +243,13 @@ fun HomeScreen(
                         }
                     }
                 }
-                if (anime.isNotEmpty()) {
+                if (groups.anime.isNotEmpty()) {
                     item(key = "row_anime") {
                         Column {
                             Spacer(Modifier.height(28.dp))
                             ContentRow(
                                 title = "动漫番剧",
-                                items = anime,
+                                items = groups.anime,
                                 onClickItem = onOpenDetail,
                                 showMore = true,
                                 onMore = { onOpenCategory(NavPage.ANIME) },
@@ -241,13 +257,13 @@ fun HomeScreen(
                         }
                     }
                 }
-                if (variety.isNotEmpty()) {
+                if (groups.variety.isNotEmpty()) {
                     item(key = "row_variety") {
                         Column {
                             Spacer(Modifier.height(28.dp))
                             ContentRow(
                                 title = "综艺",
-                                items = variety,
+                                items = groups.variety,
                                 onClickItem = onOpenDetail,
                                 showMore = true,
                                 onMore = { onOpenCategory(NavPage.VARIETY) },
@@ -272,6 +288,15 @@ private fun classifyType(typeName: String?): String {
     }
 }
 
+/** 首页内容分组（L7：remember 缓存，避免每帧重组重复 filter 500 条）。 */
+private data class HomeGroups(
+    val latest: List<VideoItem>,
+    val movies: List<VideoItem>,
+    val series: List<VideoItem>,
+    val anime: List<VideoItem>,
+    val variety: List<VideoItem>,
+)
+
 /**
  * Hero 横幅（TV 大屏适配版）：全宽背景图 cover 铺满 + 文字层叠在左侧。
  * 与 Web 端设计文档 §5.5 的 55:45 横列布局不同——TV 宽屏上"左文右图"会留大片空白
@@ -285,6 +310,7 @@ private fun HeroBanner(
     playing: Boolean,
     onPlay: () -> Unit,
     onDetail: () -> Unit,
+    playFocusRequester: androidx.compose.ui.focus.FocusRequester? = null,
 ) {
     val shape = RoundedCornerShape(20.dp)
     Box(
@@ -295,11 +321,13 @@ private fun HeroBanner(
             .clip(shape)
             .background(TvColors.BgSurface),
     ) {
-        // 背景海报：cover 铺满整个 Hero
+        // 背景海报：cover 铺满整个 Hero（U4：占位/失败态用底色，避免空白块）
         AsyncImage(
             model = resolveMediaUrl(item.pic),
             contentDescription = item.vodName,
             contentScale = ContentScale.Crop,
+            placeholder = ColorPainter(TvColors.BgElevated),
+            error = ColorPainter(TvColors.BgElevated),
             modifier = Modifier.fillMaxSize(),
         )
         // 左侧深色渐变遮罩：从左深到右透明，让左侧文字层在任意海报下都可读
@@ -366,6 +394,11 @@ private fun HeroBanner(
                     onClick = onPlay,
                     enabled = !playing,
                     fontSize = 18.sp,
+                    modifier = if (playFocusRequester != null) {
+                        Modifier.focusRequester(playFocusRequester)
+                    } else {
+                        Modifier
+                    },
                 )
                 Spacer(Modifier.width(16.dp))
                 TvButton(

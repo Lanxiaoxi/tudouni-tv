@@ -7,11 +7,12 @@ import retrofit2.Response
 /**
  * 后端可能返回相对路径（封面本地化 /covers/xxx.jpg、上游 m3u8 一般是绝对 URL）。
  * 客户端需把封面/视频相对路径拼接 baseUrl 才是可加载的完整 URL。
+ * 与 ApiClient 拦截器同源（读 serverAddr），避免未来支持自定义服务器时双源分叉。
  */
 fun resolveMediaUrl(path: String?): String? {
     if (path.isNullOrBlank()) return null
     return if (path.startsWith("http://") || path.startsWith("https://")) path
-    else ApiClient.DEFAULT_SERVER.trimEnd('/') + "/" + path.trimStart('/')
+    else ApiClient.serverAddr.trimEnd('/') + "/" + path.trimStart('/')
 }
 
 /**

@@ -16,7 +16,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import com.tudouni.tv.data.ApiClient
 import com.tudouni.tv.data.VideoItem
@@ -80,6 +81,12 @@ fun CategoryScreen(
     var subCats by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSub by remember { mutableStateOf<String?>(null) }
 
+    // 初始焦点：加载完成后给第一个 chip（「全部」），否则整页方向键不工作
+    val firstChipFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(loadingFirst) {
+        if (!loadingFirst) firstChipFocus.requestFocus()
+    }
+
     suspend fun load(pageToLoad: Int, isFirst: Boolean) {
         if (isFirst) {
             loadingFirst = true
@@ -93,7 +100,14 @@ fun CategoryScreen(
                 val body = resp.body()
                 val data = body?.data
                 if (body != null && body.code == 0 && data != null) {
-                    items = if (isFirst) data.items else items + data.items
+                    items = if (isFirst) {
+                        data.items
+                    } else {
+                        // 追加并按 (vod_id, source_code) 去重：后端实时兜底路径返回全量不分页，
+                        // 不去重会出现跨页重复（条目数虚增但内容重复）
+                        val existing = items.map { it.vodId to it.sourceCode }.toSet()
+                        items + data.items.filter { (it.vodId to it.sourceCode) !in existing }
+                    }
                     total = data.total
                     page = pageToLoad
                 } else {
@@ -132,6 +146,9 @@ fun CategoryScreen(
     val displayItems = if (selectedSub == null) items else items.filter { it.typeName == selectedSub }
 
     // 滚动到接近末尾 → 自动加载下一页
+    // M6 修复：count 是「当前网格可见项总数」，细分过滤后可能远小于 items.size，
+    // 原条件 last >= count-6 在过滤后恒真 → 疯狂拉页。要求网格项数 >= 7 才自动加载，
+    // 过滤后项少时靠底部「加载更多」按钮手动翻页。
     val hasMore = items.size < total
     LaunchedEffect(gridState, cat, items.size, total) {
         snapshotFlow {
@@ -139,7 +156,7 @@ fun CategoryScreen(
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
             last to info.totalItemsCount
         }.collect { (last, count) ->
-            if (hasMore && !loadingMore && !loadingFirst && count > 0 && last >= count - 6) {
+            if (hasMore && !loadingMore && !loadingFirst && count >= 7 && last >= count - 6) {
                 load(page + 1, isFirst = false)
             }
         }
@@ -186,6 +203,7 @@ fun CategoryScreen(
                     text = "全部",
                     selected = selectedSub == null,
                     onClick = { selectedSub = null },
+                    modifier = Modifier.focusRequester(firstChipFocus),
                 )
             }
             items(subCats.size, key = { "sub_$it" }) { i ->
@@ -226,10 +244,13 @@ fun CategoryScreen(
                 horizontalArrangement = Arrangement.spacedBy(RowCardSpacing),
                 verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
-                items(displayItems, key = { it.vodId ?: "${it.sourceCode}_${it.hashCode()}" }) { item ->
+                // L1：用 index 做稳定 key（vodId 可能为空，hashCode 可能碰撞导致 Lazy key 冲突崩溃）
+                itemsIndexed(displayItems, key = { i, _ -> "cat_$i" }) { _, item ->
                     PosterCard(item = item, onClick = { onOpenDetail(item) })
                 }
                 // 网格末尾：加载更多 / 已全部
+                // 选中细分时隐藏「加载更多」——加载更多拉取的是「全部」下一页，
+                // 新页未必含当前细分，点了条目不增反而困惑；提示切回「全部」。
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     Box(
                         modifier = Modifier
@@ -244,10 +265,21 @@ fun CategoryScreen(
                                 color = TvColors.TextTertiary,
                             )
 
+                            selectedSub != null -> Text(
+                                text = "「$selectedSub」已显示 ${displayItems.size} 条 · 切回「全部」可浏览更多",
+                                style = TvType.BodyMedium,
+                                color = TvColors.TextTertiary,
+                            )
+
                             hasMore -> TvButton(
                                 text = "加载更多（${items.size}/$total）",
                                 style = TvButtonStyle.Secondary,
-                                onClick = { scope.launch { load(page + 1, isFirst = false) } },
+                                // 防重复点击：loadingMore 时忽略
+                                onClick = {
+                                    if (!loadingMore && !loadingFirst) {
+                                        scope.launch { load(page + 1, isFirst = false) }
+                                    }
+                                },
                             )
 
                             else -> Text(

@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -81,7 +81,8 @@ fun ContentRow(
             contentPadding = contentPadding,
             horizontalArrangement = Arrangement.spacedBy(RowCardSpacing),
         ) {
-            items(items, key = { it.vodId ?: "${it.sourceCode}_${it.hashCode()}" }) { item ->
+            // L1：用 index 做稳定 key（vodId 可能为空，hashCode 兜底有碰撞崩溃风险）
+            itemsIndexed(items, key = { i, _ -> "row_$i" }) { _, item ->
                 PosterCard(item = item, onClick = { onClickItem(item) })
             }
         }

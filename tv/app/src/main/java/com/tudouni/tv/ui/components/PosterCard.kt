@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,10 +55,13 @@ fun PosterCard(
                 .aspectRatio(2f / 3f),
         ) { focused ->
             Box(Modifier.fillMaxSize()) {
+                // U4：占位/失败态用底色，避免加载中与加载失败显示空白
                 AsyncImage(
                     model = resolveMediaUrl(item.pic),
                     contentDescription = item.vodName ?: "海报",
                     contentScale = ContentScale.Crop,
+                    placeholder = ColorPainter(TvColors.BgElevated),
+                    error = ColorPainter(TvColors.BgElevated),
                     modifier = Modifier.fillMaxSize(),
                 )
                 // 左下评分/角标（优先显示评分，无评分显示 remarks 角标）
@@ -87,9 +91,16 @@ fun PosterCard(
                         )
                     }
                 }
-                // 焦点态播放浮层
-                if (focused) {
-                    PlayOverlay(Modifier.align(Alignment.Center))
+                // 焦点态播放浮层（U3：淡入 + 缩放，避免突然出现/消失）
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = focused,
+                    enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)) +
+                        androidx.compose.animation.scaleIn(initialScale = 0.8f, animationSpec = androidx.compose.animation.core.tween(150)),
+                    exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)) +
+                        androidx.compose.animation.scaleOut(targetScale = 0.8f, animationSpec = androidx.compose.animation.core.tween(120)),
+                    modifier = Modifier.align(Alignment.Center),
+                ) {
+                    PlayOverlay()
                 }
             }
         }

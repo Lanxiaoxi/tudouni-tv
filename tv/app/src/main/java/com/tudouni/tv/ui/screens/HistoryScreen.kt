@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -30,9 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -87,6 +89,12 @@ fun HistoryScreen(
     }
 
     LaunchedEffect(retryKey) { load() }
+
+    // 初始焦点：加载完成后给第一条记录，否则整页方向键不工作
+    val firstRowFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(loading, items.isEmpty()) {
+        if (!loading && items.isNotEmpty()) firstRowFocus.requestFocus()
+    }
 
     Column(Modifier.fillMaxSize()) {
         // 页标题 + 总数 + 清空
@@ -156,7 +164,7 @@ fun HistoryScreen(
                                     .padding(top = 24.dp, bottom = 14.dp),
                             )
                         }
-                        items(groupItems, key = { it.id ?: it.hashCode().toString() }) { h ->
+                        itemsIndexed(groupItems, key = { i, _ -> "hist_$i" }) { i, h ->
                             HistoryRow(
                                 item = h,
                                 onOpen = { onOpenDetail(h.toVideoItem()) },
@@ -174,6 +182,7 @@ fun HistoryScreen(
                                     }
                                 },
                                 onDelete = { deleteTarget = h },
+                                modifier = if (i == 0) Modifier.focusRequester(firstRowFocus) else Modifier,
                             )
                         }
                     }
@@ -182,7 +191,7 @@ fun HistoryScreen(
         }
     }
 
-    // 删除单条
+    // 删除单条（M3：删除后刷新失败也给出错误态而非静默）
     deleteTarget?.let { target ->
         TvDialog(
             title = "删除这条记录？",
@@ -192,7 +201,11 @@ fun HistoryScreen(
             onConfirm = {
                 deleteTarget = null
                 scope.launch {
-                    TvRepository.deleteHistoryItem(target)
+                    try {
+                        TvRepository.deleteHistoryItem(target)
+                    } catch (_: Exception) {
+                        error = "删除失败，请检查网络"
+                    }
                     load()
                 }
             },
@@ -210,7 +223,11 @@ fun HistoryScreen(
             onConfirm = {
                 showClearConfirm = false
                 scope.launch {
-                    TvRepository.clearHistory()
+                    try {
+                        TvRepository.clearHistory()
+                    } catch (_: Exception) {
+                        error = "清空失败，请检查网络"
+                    }
                     load()
                 }
             },
@@ -253,6 +270,7 @@ private fun HistoryRow(
     onOpen: () -> Unit,
     onContinue: () -> Unit,
     onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -263,7 +281,7 @@ private fun HistoryRow(
     val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = PageHorizontalPadding)
             .padding(vertical = 10.dp)
@@ -288,7 +306,7 @@ private fun HistoryRow(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 小海报 96dp
+        // 小海报 96dp（U4：占位/失败态用底色）
         Box(
             modifier = Modifier
                 .width(96.dp)
@@ -299,6 +317,8 @@ private fun HistoryRow(
                 model = resolveMediaUrl(item.pic),
                 contentDescription = item.title,
                 contentScale = ContentScale.Crop,
+                placeholder = ColorPainter(TvColors.BgElevated),
+                error = ColorPainter(TvColors.BgElevated),
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -351,10 +371,10 @@ private fun HistoryRow(
 
         Spacer(Modifier.width(24.dp))
 
-        // 操作：继续观看 / 删除
+        // 操作：继续观看 / 删除（U10：无进度时文案改为「开始观看」）
         Column(horizontalAlignment = Alignment.End) {
             TvButton(
-                text = "继续观看",
+                text = if (positionMs > 0) "继续观看" else "开始观看",
                 onClick = onContinue,
                 modifier = Modifier.width(180.dp),
             )

@@ -10,8 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -22,7 +26,8 @@ import com.tudouni.tv.ui.theme.TvType
 /**
  * TV 确认弹窗（对应设计方案 §5.9）：
  * - 宽 720dp 居中、圆角 24dp、--bg-surface 底 + line-strong 描边 + 深遮罩
- * - 打开后焦点落在确认主按钮；返回键关闭（Dialog 天然焦点隔离，关闭后焦点由 Compose 归还）
+ * - M2 修复：打开后焦点落在「确认」主按钮（LaunchedEffect + FocusRequester），
+ *   返回键关闭（Dialog 天然焦点隔离，关闭后焦点由 Compose 归还）
  */
 @Composable
 fun TvDialog(
@@ -34,6 +39,12 @@ fun TvDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val confirmFocus = remember { FocusRequester() }
+    // M2：弹窗打开后把焦点给确认主按钮
+    LaunchedEffect(Unit) {
+        confirmFocus.requestFocus()
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -66,6 +77,7 @@ fun TvDialog(
                 TvButton(
                     text = confirmText,
                     onClick = onConfirm,
+                    modifier = Modifier.focusRequester(confirmFocus),
                 )
             }
         }
