@@ -303,6 +303,27 @@ function refreshCategoryCount() {
     if (countEl) countEl.textContent = `共 ${catPool.length} 部内容`;
 }
 
+// 爱奇艺热播行：独立拉取 /api/iqiyi/hot（后端已按榜单片名聚合资源站搜索，返回可播放条目，
+// 缓存 30min）。失败/为空时隐藏整行，不影响首页其他内容。
+async function renderIqiyiRow() {
+    const strip = document.getElementById('stripIqiyi');
+    if (!strip) return;
+    try {
+        const data = await window.Api.get('/api/iqiyi/hot', {});
+        const items = (data && data.items) || [];
+        if (!items.length) {
+            const row = document.getElementById('rowIqiyi');
+            if (row) row.style.display = 'none';
+            return;
+        }
+        strip.innerHTML = items.slice(0, 12).map((it, i) => posterCardHTML(it, i)).join('');
+    } catch (e) {
+        console.error('爱奇艺热播加载失败:', e);
+        const row = document.getElementById('rowIqiyi');
+        if (row) row.style.display = 'none';
+    }
+}
+
 async function renderHomeRows() {
     // 三行先显示 loading
     ['stripSeries', 'stripMovies', 'stripAnime'].forEach(id => {
@@ -324,6 +345,7 @@ async function renderHomeRows() {
             if (el) el.innerHTML = `<div class="row-empty">加载失败，请刷新重试</div>`;
         });
     }
+    renderIqiyiRow(); // 爱奇艺热播独立渲染，失败静默隐藏
     renderHero();
 }
 

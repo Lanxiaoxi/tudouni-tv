@@ -497,9 +497,10 @@ def _video_row(r: sqlite3.Row) -> dict:
         "vod_area": r["area"],
         "vod_year": r["year"],
         "vod_play_url": r["play_url"],
-        "vod_content": r["content"],
-        "vod_director": r["director"],
-        "vod_actor": r["actor"],
+        # 以下字段 videos 表并无对应列（仅上游详情有），安全取值避免 Row 硬取抛 IndexError
+        "vod_content": r["content"] if "content" in r.keys() else None,
+        "vod_director": r["director"] if "director" in r.keys() else None,
+        "vod_actor": r["actor"] if "actor" in r.keys() else None,
     }
 
 

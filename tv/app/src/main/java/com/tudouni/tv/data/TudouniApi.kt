@@ -33,6 +33,10 @@ interface TudouniApi {
         @Query("limit") limit: Int
     ): Response<ApiResponse<ItemsData>>
 
+    /** 爱奇艺热播榜：后端已按榜单片名聚合资源站搜索，返回可播放条目（缓存 30min）。 */
+    @GET("/api/iqiyi/hot")
+    suspend fun iqiyiHot(): Response<ApiResponse<ItemsData>>
+
     @GET("/api/search")
     suspend fun search(
         @Query("wd") wd: String,

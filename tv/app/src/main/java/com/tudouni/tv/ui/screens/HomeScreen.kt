@@ -80,6 +80,8 @@ fun HomeScreen(
     var prefetching by remember { mutableStateOf(false) }  // 后台补齐状态
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableStateOf(0) }
+    // 爱奇艺热播榜（独立拉取，失败静默隐藏该行）
+    var iqiyiItems by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     // Hero「立即播放」需要先拉详情拿第一集地址
     var heroPlaying by remember { mutableStateOf(false) }
     var contentFilterEnabled by remember { mutableStateOf(settingsPreference.isContentFilterEnabled()) }
@@ -141,6 +143,26 @@ fun HomeScreen(
             error = "网络错误: ${e.message}"
         } finally {
             loading = false
+        }
+    }
+
+    // 爱奇艺热播榜：独立拉取（与主列表解耦），失败静默——行隐藏不影响首页其他内容
+    LaunchedEffect(retryKey) {
+        try {
+            val resp = ApiClient.get().iqiyiHot()
+            if (resp.isSuccessful) {
+                val body = resp.body()
+                val data = body?.data
+                if (body != null && body.code == 0 && data != null) {
+                    var list = data.items
+                    if (contentFilterEnabled) {
+                        list = ContentFilter.filterItems(list)
+                    }
+                    iqiyiItems = list
+                }
+            }
+        } catch (e: Exception) {
+            // 静默：爱奇艺榜单失败不影响首页主内容
         }
     }
 
@@ -250,6 +272,19 @@ fun HomeScreen(
                             ContentRow(
                                 title = "最新更新",
                                 items = groups.latest,
+                                onClickItem = onOpenDetail,
+                            )
+                        }
+                    }
+                }
+                // 爱奇艺热播（独立数据源，空则整行隐藏）
+                if (iqiyiItems.isNotEmpty()) {
+                    item(key = "row_iqiyi") {
+                        Column {
+                            Spacer(Modifier.height(28.dp))
+                            ContentRow(
+                                title = "爱奇艺热播",
+                                items = iqiyiItems,
                                 onClickItem = onOpenDetail,
                             )
                         }

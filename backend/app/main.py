@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, detail, home, proxy, search, sync, userdata, vodlist
+from . import auth, db, detail, home, iqiyi, proxy, search, sync, userdata, vodlist
 
 # 修复 Windows 上 Python mimetypes 把 .js 映射成 text/plain 的问题
 # （浏览器会拒绝执行 text/plain 的 <script>，导致前端 JS 全部不生效）
@@ -55,8 +55,11 @@ async def _sync_loop() -> None:
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(_sync_loop())
     logger.info("资源镜像表同步任务已启动（间隔 %sh）", SYNC_INTERVAL_HOURS)
+    iqiyi_task = asyncio.create_task(iqiyi.warmup_loop())
+    logger.info("爱奇艺热播预热任务已启动（间隔 30min）")
     yield
     task.cancel()
+    iqiyi_task.cancel()
 
 
 app = FastAPI(title="LibreTV API", version="0.1.0", lifespan=lifespan)
@@ -257,6 +260,13 @@ async def api_items(
     首屏请求 offset=0 返回前 500 条即渲染；其余批次后台补齐，total 恒为全局去重后总数。
     """
     data = await home.get_home(offset=offset, limit=limit)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.get("/api/iqiyi/hot")
+async def api_iqiyi_hot(_: None = Depends(auth.require_token)):
+    """爱奇艺热播榜：榜单片名 → 资源站聚合搜索，返回可播放条目（缓存 30min 预取）。"""
+    data = await iqiyi.get_hot()
     return {"code": 0, "data": data, "message": "ok"}
 
 
