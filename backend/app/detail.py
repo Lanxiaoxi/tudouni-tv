@@ -6,6 +6,10 @@
 解析逻辑移植自旧 js/api.js handleApiRequest 的详情分支：
 - vod_play_url 用 $$$ 分播放源、# 分集数、$ 分"标题$URL"，取第一个源的 URL
 - 无播放地址时用 M3U8 正则从 vod_content 兜底
+- 地址规整：资源站常返回播放页地址（/play/xxx，非直链 m3u8），统一在此补
+  为 /play/xxx/index.m3u8（移植自 js/pages/player.js normalizePlayUrl）——
+  之前只有 Web 端播放器侧做了这层处理，TV 端（Media3 ExoPlayer）直接拿原始
+  地址播放，缺这一步；现在改为后端统一吐出规整后的地址，两端行为一致
 - 自定义源（customApi）按标准 CMS JSON 处理；customDetail/useDetail 传 HTML 详情页
   场景暂不支持（当前内置源均为标准 CMS，无此需求）
 
@@ -36,6 +40,26 @@ _client = httpx.AsyncClient(follow_redirects=True, timeout=REQUEST_TIMEOUT)
 _DETAIL_PATH = "?ac=videolist&ids="
 _M3U8_PATTERN = re.compile(r"\$https?://[^\"'\s]+?\.m3u8")
 
+# 已是媒体扩展名的地址直接放行；播放页地址（/play/xxx）补 index.m3u8
+# 移植自 js/pages/player.js normalizePlayUrl —— 与 Web 端保持一致，
+# 使 TV 端（无客户端侧规整）也能拿到可直接播放的地址
+_MEDIA_EXT_PATTERN = re.compile(r"\.(m3u8|mp4|webm|flv|m4v|m4s)([?#]|$)", re.IGNORECASE)
+_PLAY_PAGE_PATTERN = re.compile(r"/play/[^?#]*/?$", re.IGNORECASE)
+
+
+def _normalize_play_url(url: str) -> str:
+    """资源站播放页地址（/play/xxx）→ 真实 m3u8（/play/xxx/index.m3u8）。
+
+    已是媒体扩展名（m3u8/mp4 等）的地址原样返回；两条规则均不匹配时也原样返回
+    （交给客户端播放器兜底，不确定处理反而可能破坏本就可用的地址）。
+    """
+    u = url.strip()
+    if _MEDIA_EXT_PATTERN.search(u):
+        return u
+    if _PLAY_PAGE_PATTERN.search(u):
+        return u.rstrip("/") + "/index.m3u8"
+    return u
+
 
 def _parse_episodes(vod_play_url: str | None, vod_content: str | None) -> list[str]:
     episodes: list[str] = []
@@ -47,9 +71,9 @@ def _parse_episodes(vod_play_url: str | None, vod_content: str | None) -> list[s
                 parts = ep.split("$")
                 url = parts[1] if len(parts) > 1 else ""
                 if url.startswith(("http://", "https://")):
-                    episodes.append(url)
+                    episodes.append(_normalize_play_url(url))
     if not episodes and vod_content:
-        episodes = [m.replace("$", "") for m in _M3U8_PATTERN.findall(vod_content)]
+        episodes = [_normalize_play_url(m.replace("$", "")) for m in _M3U8_PATTERN.findall(vod_content)]
     return episodes
 
 
