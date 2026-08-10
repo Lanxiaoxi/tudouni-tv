@@ -93,6 +93,9 @@ def init_db() -> None:
                 area        TEXT,
                 year        TEXT,
                 play_url    TEXT,
+                content     TEXT,
+                director    TEXT,
+                actor       TEXT,
                 vod_time    INTEGER DEFAULT 0,
                 timestamp   INTEGER NOT NULL,
                 UNIQUE(source, vod_id)
@@ -113,6 +116,11 @@ def init_db() -> None:
         if "vod_time" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN vod_time INTEGER DEFAULT 0")
             conn.commit()
+        # 存量库迁移：早期 videos 表没有 content/director/actor 列（详情本地化需要），补上（幂等）
+        for col in ("content", "director", "actor"):
+            if col not in vcols:
+                conn.execute(f"ALTER TABLE videos ADD COLUMN {col} TEXT")
+                conn.commit()
     finally:
         conn.close()
 
@@ -369,7 +377,10 @@ def clear_search_history(user_id: int) -> None:
 
 # ---------- 资源镜像表（videos） ----------
 
-_VIDEO_COLS = ("source", "source_name", "vod_id", "title", "type_name", "pic", "remarks", "area", "year", "play_url")
+_VIDEO_COLS = (
+    "source", "source_name", "vod_id", "title", "type_name", "pic", "remarks",
+    "area", "year", "play_url", "content", "director", "actor",
+)
 
 
 def _parse_vod_time(value) -> int:
@@ -400,17 +411,19 @@ def upsert_videos(rows: list[dict]) -> int:
                 continue
             conn.execute(
                 """
-                INSERT INTO videos (source, source_name, vod_id, title, type_name, pic, remarks, area, year, play_url, vod_time, timestamp)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO videos (source, source_name, vod_id, title, type_name, pic, remarks, area, year, play_url, content, director, actor, vod_time, timestamp)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(source, vod_id) DO UPDATE SET
                     source_name=excluded.source_name, title=excluded.title, type_name=excluded.type_name,
                     pic=excluded.pic, remarks=excluded.remarks, area=excluded.area, year=excluded.year,
-                    play_url=excluded.play_url, vod_time=excluded.vod_time, timestamp=excluded.timestamp
+                    play_url=excluded.play_url, content=excluded.content, director=excluded.director,
+                    actor=excluded.actor, vod_time=excluded.vod_time, timestamp=excluded.timestamp
                 """,
                 (
                     source, it.get("source_name"), vod_id, title,
                     it.get("type_name"), it.get("pic"), it.get("remarks"),
                     it.get("area"), it.get("year"), it.get("play_url"),
+                    it.get("content"), it.get("director"), it.get("actor"),
                     _parse_vod_time(it.get("vod_time")),
                     int(it.get("timestamp") or time.time()),
                 ),
@@ -484,7 +497,26 @@ def _video_row(r: sqlite3.Row) -> dict:
         "vod_area": r["area"],
         "vod_year": r["year"],
         "vod_play_url": r["play_url"],
+        "vod_content": r["content"],
+        "vod_director": r["director"],
+        "vod_actor": r["actor"],
     }
+
+
+def get_video_by_id(source: str, vod_id: str) -> dict | None:
+    """按 (source, vod_id) 精确查询单条镜像记录。用于 /api/detail 本地命中。
+
+    要求 play_url 非空（否则无法解析出集数，视为未命中，交由调用方走远程兜底）。
+    """
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM videos WHERE source = ? AND vod_id = ? AND play_url IS NOT NULL AND play_url != ''",
+            (source, vod_id),
+        ).fetchone()
+        return _video_row(row) if row else None
+    finally:
+        conn.close()
 
 
 # 排序：内容更新时间(vod_time)优先，未知(vod_time=0，如按需填充的行)排最后，再按同步时间稳定

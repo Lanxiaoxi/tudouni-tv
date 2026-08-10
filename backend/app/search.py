@@ -130,6 +130,9 @@ async def aggregated_search(
                     "area": it.get("vod_area"),
                     "year": it.get("vod_year"),
                     "play_url": it.get("vod_play_url"),
+                    "content": it.get("vod_content"),
+                    "director": it.get("vod_director"),
+                    "actor": it.get("vod_actor"),
                     "vod_time": it.get("vod_time"),
                 }
                 for it in items

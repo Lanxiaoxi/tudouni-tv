@@ -8,6 +8,15 @@
 - 无播放地址时用 M3U8 正则从 vod_content 兜底
 - 自定义源（customApi）按标准 CMS JSON 处理；customDetail/useDetail 传 HTML 详情页
   场景暂不支持（当前内置源均为标准 CMS，无此需求）
+
+三级链路（与 search.py 一致，减少对资源站的实时请求）：
+① TTL 缓存：同 id 短期内命中直接返回
+② videos 镜像表：本地按 (source, vod_id) 精确查，play_url 非空才算命中
+   （实测列表接口与详情接口返回的 vod_play_url 一致，可直接复用；如遇某源列表
+   接口裁剪播放地址，本地记录 play_url 为空，则自然落到③兜底，不会返回空集数）
+③ 实时兜底：①②都未命中才打资源站详情接口，解析后写回缓存 + 镜像表
+   （命中过一次后，下次同一 id 可直接从②本地命中，不再打资源站）
+- 自定义源（source=custom）不缓存、不查本地表，始终走③直连
 """
 
 import re
@@ -15,6 +24,7 @@ import re
 import httpx
 from fastapi import HTTPException
 
+from . import db
 from .cache import cache_get, cache_set
 from .config import DETAIL_TTL_SECONDS, REQUEST_TIMEOUT, USER_AGENT
 from .security import validate_target_url
@@ -43,6 +53,29 @@ def _parse_episodes(vod_play_url: str | None, vod_content: str | None) -> list[s
     return episodes
 
 
+def _build_result(v: dict, detail_url: str, source_name: str, source_code: str) -> dict:
+    """把 CMS 原始字段（或本地镜像的 vod_* 兼容字段）组装成统一响应结构。"""
+    episodes = _parse_episodes(v.get("vod_play_url"), v.get("vod_content"))
+    return {
+        "code": 200,
+        "episodes": episodes,
+        "detailUrl": detail_url,
+        "videoInfo": {
+            "title": v.get("vod_name"),
+            "cover": v.get("vod_pic"),
+            "desc": v.get("vod_content"),
+            "type": v.get("type_name"),
+            "year": v.get("vod_year"),
+            "area": v.get("vod_area"),
+            "director": v.get("vod_director"),
+            "actor": v.get("vod_actor"),
+            "remarks": normalize_remarks(v.get("vod_remarks")),
+            "source_name": source_name,
+            "source_code": source_code,
+        },
+    }
+
+
 async def get_detail(
     id: str,
     source: str | None = None,
@@ -56,13 +89,26 @@ async def get_detail(
         raise HTTPException(400, "无效的视频ID格式")
 
     is_custom = source == "custom"
-    # TTL 缓存：非自定义源命中直接返回（剧集列表短期内基本不变）
+    cache_key = f"detail:{source or 'jinying'}:{id}"
+
     if not is_custom:
-        cache_key = f"detail:{source or 'jinying'}:{id}"
+        # 一级：TTL 缓存命中直接返回
         cached = cache_get(cache_key)
         if cached is not None:
             return cached
 
+        # 二级：本地 videos 镜像表精确查（play_url 非空才算命中）
+        src_key = source or "jinying"
+        local = db.get_video_by_id(src_key, id)
+        if local is not None:
+            detail_url = _DETAIL_PATH + id  # 未实际请求资源站，仅记录查询标识
+            result = _build_result(local, detail_url, local["source_name"], src_key)
+            if result["episodes"]:
+                cache_set(cache_key, result, DETAIL_TTL_SECONDS)
+                return result
+            # 本地记录解析不出集数（如该源列表接口未带完整播放地址）→ 落到三级兜底
+
+    # 三级：实时兜底（或自定义源直通）
     if is_custom:
         if not customApi:
             raise HTTPException(400, "使用自定义API时必须提供API地址")
@@ -97,25 +143,29 @@ async def get_detail(
         raise HTTPException(404, "未获取到视频详情")
 
     v = lst[0]
-    episodes = _parse_episodes(v.get("vod_play_url"), v.get("vod_content"))
-    result = {
-        "code": 200,
-        "episodes": episodes,
-        "detailUrl": detail_url,
-        "videoInfo": {
-            "title": v.get("vod_name"),
-            "cover": v.get("vod_pic"),
-            "desc": v.get("vod_content"),
-            "type": v.get("type_name"),
-            "year": v.get("vod_year"),
-            "area": v.get("vod_area"),
-            "director": v.get("vod_director"),
-            "actor": v.get("vod_actor"),
-            "remarks": normalize_remarks(v.get("vod_remarks")),
-            "source_name": source_name,
-            "source_code": source_code,
-        },
-    }
+    result = _build_result(v, detail_url, source_name, source_code)
     if not is_custom:
         cache_set(cache_key, result, DETAIL_TTL_SECONDS)
+        # 按需填充：兜底命中结果写回镜像表，下次同一 id 可直接本地命中（②）
+        try:
+            db.upsert_videos([
+                {
+                    "source": source_code,
+                    "source_name": source_name,
+                    "vod_id": id,
+                    "title": str(v.get("vod_name") or ""),
+                    "type_name": v.get("type_name"),
+                    "pic": v.get("vod_pic"),
+                    "remarks": v.get("vod_remarks"),
+                    "area": v.get("vod_area"),
+                    "year": v.get("vod_year"),
+                    "play_url": v.get("vod_play_url"),
+                    "content": v.get("vod_content"),
+                    "director": v.get("vod_director"),
+                    "actor": v.get("vod_actor"),
+                    "vod_time": v.get("vod_time"),
+                }
+            ])
+        except Exception:
+            pass  # 入库失败不影响详情返回
     return result
