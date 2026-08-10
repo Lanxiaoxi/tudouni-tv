@@ -10,8 +10,10 @@ TudouniTV 是一个前后端分离的视频聚合搜索工具。后端使用 **P
 - 服务器仅代理元数据（搜索结果、详情、封面图），并维护 **SQLite 数据库**（多用户体系 + 资源镜像表 + 缓存）
 - **多用户注册登录**：观看历史 / 搜索历史 / 偏好设置按用户隔离，换设备登录自动同步
 - **资源镜像表**：定时从资源站拉取索引，首页 / 分类 / 搜索本地查库，大幅减少对上游的实时请求
+- **爱奇艺热播板块**：后端拉取爱奇艺热播榜片名，映射到资源站聚合搜索结果，首页独立渲染（失败静默隐藏）
 - 支持多源聚合搜索、换源测速、进度记忆、自动连播
 - 暗色 / 亮色双主题，响应式布局
+- **Android TV 客户端**（`tv/` 目录）：Kotlin + Jetpack Compose + Media3 ExoPlayer，对接同一后端 API
 
 ## 架构
 
@@ -26,6 +28,7 @@ LibreTV/
 │   ├── core/           # 公共基础模块（config / api / proxy-auth / password / ui …）
 │   └── pages/          # 页面逻辑（app / index-page / player / player-page / discovery …）
 ├── libs/               # 第三方库（hls.js / artplayer / tailwind / sha256）
+├── tv/                 # Android TV 客户端（Kotlin + Jetpack Compose + Media3）
 ├── backend/            # Python FastAPI 后端
 │   ├── app/
 │   │   ├── main.py     # 入口：路由 + 静态挂载 + lifespan 启动后台同步任务
@@ -38,6 +41,7 @@ LibreTV/
 │   │   ├── detail.py   # 视频详情（TTL 缓存）
 │   │   ├── vodlist.py  # 列表 / 分类（查镜像表，含源可达性测试）
 │   │   ├── home.py     # 首页数据（查镜像表）
+│   │   ├── iqiyi.py    # 爱奇艺热播榜 → 聚合搜索映射（30min 缓存 + 后台预热）
 │   │   ├── cache.py    # 进程内 TTL 缓存（惰性过期 + LRU）
 │   │   ├── sync.py     # 资源镜像表轮转同步任务
 │   │   ├── proxy.py    # 通用代理（封面图等）
@@ -145,6 +149,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 9797
 | `GET` | `/api/search` | 聚合搜索（`wd`，三级：缓存→镜像表→实时） |
 | `GET` | `/api/vodlist` | 列表 / 分类（`source` / `cat` / `pg` + CMS 透传参数） |
 | `GET` | `/api/items` | 首页聚合数据（查镜像表） |
+| `GET` | `/api/iqiyi/hot` | 爱奇艺热播榜（榜单片名 → 聚合搜索映射，30min 缓存 + 后台预热） |
 | `GET` | `/api/site-test` | 数据源可达性测试（`source`，设置面板用） |
 | `GET` | `/api/proxy` | 通用代理（封面图等，`url` 参数） |
 | `GET` | `/api/detail` | 视频详情 + 播放地址（`id` / `source`） |
@@ -172,10 +177,37 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 9797
 | `↑` / `↓` | 音量增加 / 减小 |
 | `F` | 切换全屏 |
 
+## 开发约定：前端静态资源版本号
+
+**只要改了 `js/` 或 `css/` 下的任何文件，必须同步 bump `index.html` 里对应资源的 `?v=N` 查询参数。** 这是硬性约定，否则线上会出现「HTML 是新的、JS 是旧的」的缓存错位问题。
+
+```html
+<script src="js/pages/discovery.js?v=13"></script>
+<!-- 改了 js/pages/discovery.js 后必须改成 ↓ -->
+<script src="js/pages/discovery.js?v=14"></script>
+```
+
+### 为什么必须这样做
+
+- 生产环境前端由 Nginx + Cloudflare 托管，`?v=N` 是**完整的缓存键**：CF 边缘、浏览器 HTTP 缓存、PWA Service Worker 都以「URL 含 v 参数」为准。
+- 版本号不变 → 所有缓存层都命中旧文件 → 客户端拿到的 JS 不包含本次改动。
+- 后果是「新功能/修复在本地正常，线上无效果」，且难排查——页面结构（HTML）可能已更新，但行为逻辑（JS）还是旧的。
+
+### 踩坑实例（2026-08）
+
+首页新增「爱奇艺热播」板块：commit 里加了 `rowIqiyi` 的 HTML 结构（index.html）和 `renderIqiyiRow()` 渲染函数（discovery.js），但 **discovery.js 的 `?v=13` 没升到 14**。线上表现为：标题行「爱奇艺热播」正常显示（HTML 新），但行内永远空白（JS 旧，没有渲染函数）。修复只需 bump 版本号后重新发布。
+
+### 操作清单
+
+1. 改完 `js/`、`css/` 下的文件后，`git diff index.html` 确认对应 `?v=N` 已 +1
+2. 验证：`curl -s https://你的域名/ | grep 'js/pages/discovery.js?v='` 确认线上已发布新版本号
+3. 部署后建议强刷（Ctrl+Shift+R）一次，排除浏览器本地缓存
+
 ## 技术栈
 
 - **后端**：Python 3.13 + FastAPI + httpx + uvicorn + sqlite3（零第三方存储依赖，uv 管理依赖）
 - **前端**：HTML5 + CSS3 + JavaScript (ES6+)
+- **Android TV 客户端**：Kotlin + Jetpack Compose + Media3 ExoPlayer + Retrofit
 - **样式**：Tailwind CSS + 自定义设计系统
 - **播放器**：ArtPlayer + HLS.js
 - **存储**：SQLite（多用户数据 + 资源镜像表）+ localStorage（前端缓存）+ 内存 TTL 缓存
