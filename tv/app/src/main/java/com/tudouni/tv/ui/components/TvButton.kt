@@ -35,7 +35,7 @@ enum class TvButtonStyle { Primary, Secondary, Ghost }
 
 /**
  * TV 按钮（对应设计方案 §5.6）：
- * - 高度 64dp、圆角 14dp、按钮文字 26sp/700
+ * - 高度 64dp、圆角 14dp、按钮文字 26sp/700（compact=true 时高度 40dp、内边距 16dp）
  * - 焦点态 scale 1.05 + 描边：Primary 用白色（琥珀底上保证对比），其余用琥珀色
  */
 @Composable
@@ -47,6 +47,7 @@ fun TvButton(
     enabled: Boolean = true,
     leadingIcon: (@Composable () -> Unit)? = null,
     fontSize: TextUnit = 24.sp,
+    compact: Boolean = false,
 ) {
     val shape = TvShapes.Button
     val interactionSource = remember { MutableInteractionSource() }
@@ -87,7 +88,7 @@ fun TvButton(
 
     Box(
         modifier = modifier
-            .height(64.dp)
+            .height(if (compact) 40.dp else 64.dp)
             .graphicsLayer {
                 scaleX = animatedScale
                 scaleY = animatedScale
@@ -100,7 +101,7 @@ fun TvButton(
                 indication = null,
                 onClick = onClick,
             )
-            .padding(horizontal = 28.dp),
+            .padding(horizontal = if (compact) 16.dp else 28.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -110,7 +111,7 @@ fun TvButton(
             }
             Text(
                 text = text,
-                style = TvType.ButtonLabel.copy(fontSize = fontSize),
+                style = TvType.ButtonLabel.copy(fontSize = if (compact && fontSize == 24.sp) 16.sp else fontSize),
                 color = if (enabled) contentColor else TvColors.TextTertiary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

@@ -61,6 +61,8 @@ fun TvTextKeyboard(
 ) {
     // 当前键页：false=字母，true=符号
     var symbolPage by remember { mutableStateOf(false) }
+    // 字母大小写（默认大写；⇧ 键切换，D-pad 可达）
+    var uppercase by remember { mutableStateOf(true) }
 
     // 初始焦点：页面进入时聚焦第一个键（否则整页方向键不工作）
     val firstKeyFocus = remember { androidx.compose.ui.focus.FocusRequester() }
@@ -94,29 +96,38 @@ fun TvTextKeyboard(
         }
 
         // ---- 数字行（两页共用）；第一个键挂初始焦点 ----
+        // 字符键统一「追加」语义：外层 onValueChange 是整体替换（SearchScreen keyword = it），
+        // 键盘内部必须自己拼 value + 新字符，否则连续按键会互相覆盖。
         KeyRow(
             keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
             keyWidth = keyWidth,
             keyHeight = keyHeight,
             keyGap = keyGap,
             enabled = enabled,
-            onKey = onValueChange,
+            onKey = { c -> onValueChange(value + c) },
             firstKeyFocus = firstKeyFocus,
         )
 
         Spacer(Modifier.height(keyGap))
 
-        // ---- 字母页 / 符号页 ----
+        // ---- 字母页 / 符号页（字符键同样走追加语义） ----
         if (symbolPage) {
-            SymbolRows(keyWidth, keyHeight, keyGap, enabled, onValueChange)
+            SymbolRows(keyWidth, keyHeight, keyGap, enabled) { c -> onValueChange(value + c) }
         } else {
-            LetterRows(keyWidth, keyHeight, keyGap, enabled, onValueChange)
+            LetterRows(keyWidth, keyHeight, keyGap, enabled, uppercase) { c -> onValueChange(value + c) }
         }
 
         Spacer(Modifier.height(keyGap))
 
-        // ---- 功能行：模式切换 / 空格 / 退格 / 清空 / 完成 ----
+        // ---- 功能行：大小写 / 模式切换 / 空格 / 退格 / 清空 / 完成 ----
         Row(horizontalArrangement = Arrangement.spacedBy(keyGap), verticalAlignment = Alignment.CenterVertically) {
+            KeyButton(
+                text = if (uppercase) "⇧大" else "⇧小",
+                width = keyWidth,
+                height = keyHeight,
+                enabled = enabled && !symbolPage,
+                onClick = { uppercase = !uppercase },
+            )
             KeyButton(
                 text = if (symbolPage) "ABC" else "#+=",
                 width = keyWidth,
@@ -158,13 +169,22 @@ fun TvTextKeyboard(
 }
 
 @Composable
-private fun LetterRows(keyWidth: androidx.compose.ui.unit.Dp, keyHeight: androidx.compose.ui.unit.Dp, keyGap: androidx.compose.ui.unit.Dp, enabled: Boolean, onKey: (String) -> Unit) {
-    KeyRow(listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"), keyWidth, keyHeight, keyGap, enabled, onKey)
+private fun LetterRows(
+    keyWidth: androidx.compose.ui.unit.Dp,
+    keyHeight: androidx.compose.ui.unit.Dp,
+    keyGap: androidx.compose.ui.unit.Dp,
+    enabled: Boolean,
+    uppercase: Boolean,
+    onKey: (String) -> Unit,
+) {
+    // 按大小写状态渲染与输出：大写行/小写行
+    val disp = { c: String -> if (uppercase) c else c.lowercase() }
+    KeyRow(listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P").map { disp(it) }, keyWidth, keyHeight, keyGap, enabled, onKey)
     Spacer(Modifier.height(keyGap))
     Row(horizontalArrangement = Arrangement.spacedBy(keyGap)) {
         Spacer(Modifier.width((keyWidth + keyGap) / 2))
         listOf("A", "S", "D", "F", "G", "H", "J", "K", "L").forEach { c ->
-            KeyButton(c, keyWidth, keyHeight, enabled, onClick = { onKey(c) })
+            KeyButton(disp(c), keyWidth, keyHeight, enabled, onClick = { onKey(disp(c)) })
         }
         Spacer(Modifier.width((keyWidth + keyGap) / 2))
     }
@@ -172,7 +192,7 @@ private fun LetterRows(keyWidth: androidx.compose.ui.unit.Dp, keyHeight: android
     Row(horizontalArrangement = Arrangement.spacedBy(keyGap)) {
         Spacer(Modifier.width(keyWidth + keyGap))
         listOf("Z", "X", "C", "V", "B", "N", "M").forEach { c ->
-            KeyButton(c, keyWidth, keyHeight, enabled, onClick = { onKey(c) })
+            KeyButton(disp(c), keyWidth, keyHeight, enabled, onClick = { onKey(disp(c)) })
         }
         Spacer(Modifier.width(keyWidth + keyGap))
     }

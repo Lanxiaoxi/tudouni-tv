@@ -268,12 +268,26 @@ fun PlayerScreen(
                         Text("缓冲中…", style = TvType.BodyMedium, color = TvColors.TextSecondary)
                     }
                 }
-                // 全屏切换按钮：右上角，常驻显示，遥控器可直接聚焦
+                // 返回按钮：左上角常驻（行为与遥控器返回键一致：全屏先退全屏）
+                if (playerError == null) {
+                    TvButton(
+                        text = "← 返回",
+                        style = TvButtonStyle.Secondary,
+                        fontSize = 18.sp,
+                        compact = true,
+                        onClick = { if (isFullscreen) isFullscreen = false else onBack() },
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(16.dp),
+                    )
+                }
+                // 全屏切换按钮：右上角，常驻显示，遥控器可直接聚焦（compact 小尺寸）
                 if (playerError == null) {
                     TvButton(
                         text = if (isFullscreen) "退出全屏" else "全屏",
                         style = TvButtonStyle.Secondary,
                         fontSize = 18.sp,
+                        compact = true,
                         onClick = { isFullscreen = !isFullscreen },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
