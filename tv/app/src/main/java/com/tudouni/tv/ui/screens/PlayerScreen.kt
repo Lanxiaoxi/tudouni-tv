@@ -150,6 +150,18 @@ fun PlayerScreen(
         }
     }
 
+    // 切换剧集：更新当前集 + 立即播放 + 上报换集标记（M1：force=true 允许 duration=0）
+    // 局部函数需在 LaunchedEffect 使用前声明（Kotlin 局部函数必须先声明后使用）
+    fun switchEpisode(index: Int) {
+        if (index !in epsState.indices) return
+        currentIndex = index
+        showResumeTip = false
+        controller.playEpisode(epsState[index])
+        scope.launch {
+            TvRepository.reportProgress(currentItem, epsState, index, 0L, 0L, force = true)
+        }
+    }
+
     // 监听播放结束并自动连播
     val playbackEnded by controller.playbackEnded.collectAsState()
     LaunchedEffect(playbackEnded) {
@@ -187,17 +199,6 @@ fun PlayerScreen(
     BackHandler(onBack = {
         if (isFullscreen) isFullscreen = false else onBack()
     })
-
-    fun switchEpisode(index: Int) {
-        if (index !in epsState.indices) return
-        currentIndex = index
-        showResumeTip = false
-        controller.playEpisode(epsState[index])
-        // M1：立即上报换集标记（force=true 允许 duration=0），供下次恢复定位集数
-        scope.launch {
-            TvRepository.reportProgress(currentItem, epsState, index, 0L, 0L, force = true)
-        }
-    }
 
     // 换源：遍历内置源找同片名 → 拉替代源详情 → 播当前集
     fun switchSource() {

@@ -31,6 +31,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.tudouni.tv.data.ApiClient
 import com.tudouni.tv.data.ContentFilter
@@ -143,31 +144,6 @@ fun CategoryScreen(
             error = "网络错误: ${e.message}"
         } finally {
             if (isFirst) loadingFirst = false else loadingMore = false
-        }
-    }
-                val data = body?.data
-                if (body != null && body.code == 0 && data != null) {
-                    items = if (isFirst) {
-                        data.items
-                    } else {
-                        // 追加并按 (vod_id, source_code) 去重：后端实时兜底路径返回全量不分页，
-                        // 不去重会出现跨页重复（条目数虚增但内容重复）
-                        val existing = items.map { it.vodId to it.sourceCode }.toSet()
-                        items + data.items.filter { (it.vodId to it.sourceCode) !in existing }
-                    }
-                    total = data.total
-                    page = pageToLoad
-                } else {
-                    error = body?.message ?: "加载失败"
-                }
-            } else {
-                error = resp.errorMessage()
-            }
-        } catch (e: Exception) {
-            error = "网络错误: ${e.message}"
-        } finally {
-            loadingFirst = false
-            loadingMore = false
         }
     }
 
