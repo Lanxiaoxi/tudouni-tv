@@ -173,7 +173,20 @@ fun PlayerScreen(
         }
     }
 
-    BackHandler(onBack = onBack)
+    // 全屏：隐藏右侧选集栏 + 底部标题区，播放器占满整个页面
+    var isFullscreen by remember { mutableStateOf(false) }
+    val fullscreenButtonFocus = remember { FocusRequester() }
+    LaunchedEffect(isFullscreen) {
+        if (isFullscreen && playerError == null) {
+            delay(100) // 等待按钮组合完成
+            runCatching { fullscreenButtonFocus.requestFocus() }
+        }
+    }
+
+    // 返回键：全屏中先退出全屏，非全屏才真正返回上一页
+    BackHandler(onBack = {
+        if (isFullscreen) isFullscreen = false else onBack()
+    })
 
     fun switchEpisode(index: Int) {
         if (index !in epsState.indices) return
@@ -223,12 +236,12 @@ fun PlayerScreen(
     }
 
     Row(Modifier.fillMaxSize().background(TvColors.BgBase)) {
-        // 左：播放器
+        // 左：播放器（全屏时占满整个页面，隐藏右侧选集栏）
         Column(
             modifier = Modifier
-                .weight(0.65f)
+                .weight(if (isFullscreen) 1f else 0.65f)
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(if (isFullscreen) 0.dp else 24.dp),
         ) {
             Box(
                 modifier = Modifier
@@ -253,6 +266,19 @@ fun PlayerScreen(
                         Spacer(Modifier.height(12.dp))
                         Text("缓冲中…", style = TvType.BodyMedium, color = TvColors.TextSecondary)
                     }
+                }
+                // 全屏切换按钮：右上角，常驻显示，遥控器可直接聚焦
+                if (playerError == null) {
+                    TvButton(
+                        text = if (isFullscreen) "退出全屏" else "全屏",
+                        style = TvButtonStyle.Secondary,
+                        fontSize = 18.sp,
+                        onClick = { isFullscreen = !isFullscreen },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp)
+                            .focusRequester(fullscreenButtonFocus),
+                    )
                 }
                 // H2：播放错误浮层（重试 / 换源 / 返回）
                 playerError?.let { err ->
@@ -298,59 +324,63 @@ fun PlayerScreen(
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = currentItem.vodName ?: "",
-                style = TvType.RowTitle.copy(fontSize = 22.sp),
-                color = TvColors.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (currentItem.sourceName != null && currentItem.sourceName != item.sourceName) {
-                Spacer(Modifier.height(6.dp))
+            if (!isFullscreen) {
+                Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "来源：${currentItem.sourceName}",
-                    style = TvType.Caption.copy(fontSize = 16.sp),
-                    color = TvColors.Accent,
+                    text = currentItem.vodName ?: "",
+                    style = TvType.RowTitle.copy(fontSize = 22.sp),
+                    color = TvColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            }
-            if (showResumeTip) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "已从上次进度继续播放（第 ${currentIndex + 1} 集）",
-                    style = TvType.Caption,
-                    color = TvColors.Success,
-                )
+                if (currentItem.sourceName != null && currentItem.sourceName != item.sourceName) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "来源：${currentItem.sourceName}",
+                        style = TvType.Caption.copy(fontSize = 16.sp),
+                        color = TvColors.Accent,
+                    )
+                }
+                if (showResumeTip) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "已从上次进度继续播放（第 ${currentIndex + 1} 集）",
+                        style = TvType.Caption,
+                        color = TvColors.Success,
+                    )
+                }
             }
         }
 
-        // 右：选集
-        Column(
-            modifier = Modifier
-                .weight(0.35f)
-                .fillMaxSize()
-                .background(TvColors.BgSurface)
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-        ) {
-            Text(
-                text = "选集（${epsState.size}）",
-                style = TvType.RowTitle.copy(fontSize = 24.sp),
-                color = TvColors.TextPrimary,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "方向键选择 · 数字键跳集",
-                style = TvType.Caption,
-                color = TvColors.TextTertiary,
-            )
-            Spacer(Modifier.height(20.dp))
-            EpisodeGrid(
-                count = epsState.size,
-                currentIndex = currentIndex,
-                onSelect = { index -> switchEpisode(index) },
-                initialFocusIndex = currentIndex,
-                modifier = Modifier.fillMaxSize(),
-            )
+        // 右：选集（全屏时隐藏）
+        if (!isFullscreen) {
+            Column(
+                modifier = Modifier
+                    .weight(0.35f)
+                    .fillMaxSize()
+                    .background(TvColors.BgSurface)
+                    .padding(horizontal = 24.dp, vertical = 28.dp),
+            ) {
+                Text(
+                    text = "选集（${epsState.size}）",
+                    style = TvType.RowTitle.copy(fontSize = 24.sp),
+                    color = TvColors.TextPrimary,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "方向键选择 · 数字键跳集",
+                    style = TvType.Caption,
+                    color = TvColors.TextTertiary,
+                )
+                Spacer(Modifier.height(20.dp))
+                EpisodeGrid(
+                    count = epsState.size,
+                    currentIndex = currentIndex,
+                    onSelect = { index -> switchEpisode(index) },
+                    initialFocusIndex = currentIndex,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
