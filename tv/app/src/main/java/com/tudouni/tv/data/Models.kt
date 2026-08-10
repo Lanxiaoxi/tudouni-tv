@@ -104,6 +104,26 @@ data class VodListData(
 
 // ---------- 观看历史（/api/history，字段对齐后端 viewing_history 行） ----------
 
+/**
+ * PUT /api/history 的请求体。
+ *
+ * 必须用具体类型而不能用 Map<String, Any>：Kotlin 的 Map<V> 中 V 是 out（协变）位置，
+ * Map<String, Any> 编译成 Java 后会被投影为 Map<String, ? extends Object>（含通配符），
+ * Retrofit 校验 @Body 参数时直接抛 "Parameter type must not include a type variable or
+ * wildcard"。data class 字段类型明确，Gson 序列化字段名走 @SerializedName。
+ */
+data class HistoryBody(
+    val title: String,
+    @SerializedName("vod_id") val vodId: String,
+    val source: String,
+    val pic: String,
+    val episodes: List<String>,
+    @SerializedName("episode_index") val episodeIndex: Int,
+    val position: Double,
+    val duration: Double,
+    val timestamp: Long,
+)
+
 data class HistoryData(
     val items: List<HistoryItem>,
     val total: Int

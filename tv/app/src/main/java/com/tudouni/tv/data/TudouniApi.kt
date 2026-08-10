@@ -57,7 +57,7 @@ interface TudouniApi {
     suspend fun history(@Query("limit") limit: Int = 100): Response<ApiResponse<HistoryData>>
 
     @PUT("/api/history")
-    suspend fun putHistory(@Body body: Map<String, Any>): Response<ApiResponse<Map<String, Any>>>
+    suspend fun putHistory(@Body body: HistoryBody): Response<ApiResponse<Map<String, Any>>>
 
     @DELETE("/api/history")
     suspend fun clearHistory(): Response<ApiResponse<Map<String, Any>>>

@@ -47,16 +47,16 @@ object TvRepository {
         if (item.vodName.isNullOrBlank()) return@withContext false
         reportMutex.withLock {
             val resp = ApiClient.get().putHistory(
-                mapOf(
-                    "title" to item.vodName,
-                    "vod_id" to (item.vodId ?: ""),
-                    "source" to (item.sourceCode ?: ""),
-                    "pic" to (item.pic ?: ""),
-                    "episodes" to episodes,
-                    "episode_index" to episodeIndex,
-                    "position" to (positionMs / 1000.0),
-                    "duration" to (durationMs / 1000.0),
-                    "timestamp" to timestamp,
+                HistoryBody(
+                    title = item.vodName ?: "",
+                    vodId = item.vodId ?: "",
+                    source = item.sourceCode ?: "",
+                    pic = item.pic ?: "",
+                    episodes = episodes,
+                    episodeIndex = episodeIndex,
+                    position = positionMs / 1000.0,
+                    duration = durationMs / 1000.0,
+                    timestamp = timestamp,
                 )
             )
             resp.isSuccessful
