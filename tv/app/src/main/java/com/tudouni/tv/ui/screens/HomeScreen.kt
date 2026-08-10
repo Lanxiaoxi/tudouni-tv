@@ -38,7 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.tudouni.tv.data.ApiClient
+import com.tudouni.tv.data.ContentFilter
 import com.tudouni.tv.data.DetailResponse
+import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.data.errorMessage
 import com.tudouni.tv.data.resolveMediaUrl
@@ -54,7 +56,10 @@ import kotlinx.coroutines.launch
 
 /**
  * 首页（对应设计方案 §6.1）：Hero 横幅 + 多内容行（按 type_name 客户端分组）。
- * 数据源 /api/items（镜像表毫秒级），一次拉 500 条后本地分组。
+ * 数据源 /api/items（镜像表毫秒级）：
+ * - 首屏加载 offset=0, limit=500 快速响应
+ * - 后台异步补齐 offset=500, limit=500 等后续批次（不阻塞首屏）
+ * - 数据补齐时自动触发分组重算（分类页自动更新）
  */
 @Composable
 fun HomeScreen(
@@ -63,15 +68,20 @@ fun HomeScreen(
     onPlay: (VideoItem, String, List<String>, Int, Long) -> Unit,
     onOpenCategory: (NavPage) -> Unit,
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val settingsPreference = remember { SettingsPreference(context) }
 
     var items by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var totalCount by remember { mutableStateOf(0) }  // 后端返回的全局总数
     var loading by remember { mutableStateOf(true) }
+    var prefetching by remember { mutableStateOf(false) }  // 后台补齐状态
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableStateOf(0) }
     // Hero「立即播放」需要先拉详情拿第一集地址
     var heroPlaying by remember { mutableStateOf(false) }
+    var contentFilterEnabled by remember { mutableStateOf(settingsPreference.isContentFilterEnabled()) }
 
     // 初始焦点：Compose 不会自动聚焦第一个控件，必须显式请求，
     // 否则整页方向键焦点导航不工作。加载完成后把焦点给 Hero「立即播放」。
@@ -84,14 +94,42 @@ fun HomeScreen(
 
     LaunchedEffect(retryKey) {
         loading = true
+        prefetching = false
         error = null
+        items = emptyList()
+        totalCount = 0
         try {
+            // 首屏：拉取第一批 500 条
             val resp = ApiClient.get().items(offset = 0, limit = 500)
             if (resp.isSuccessful) {
                 val body = resp.body()
                 val data = body?.data
                 if (body != null && body.code == 0 && data != null) {
-                    items = data.items
+                    // 应用内容分级过滤
+                    var filteredItems = data.items
+                    if (contentFilterEnabled) {
+                        filteredItems = ContentFilter.filterItems(filteredItems)
+                    }
+                    
+                    items = filteredItems
+                    totalCount = data.total
+                    // 后台补齐剩余批次（不阻塞首屏）
+                    if (data.total > filteredItems.size) {
+                        scope.launch {
+                            prefetchHomeItems(filteredItems.size, data.total, contentFilterEnabled) { newItems ->
+                                // 合并新数据并去重
+                                val seen = items.map { it.vodId to it.sourceCode }.toSet()
+                                val fresh = newItems.filter { (it.vodId to it.sourceCode) !in seen }
+                                if (fresh.isNotEmpty()) {
+                                    items = items + fresh
+                                    // 记录日志
+                                    android.util.Log.d("HomeScreen", "后台补齐: ${items.size} / $totalCount")
+                                }
+                            }
+                            prefetching = false
+                        }
+                        prefetching = true
+                    }
                 } else {
                     error = body?.message ?: "加载失败"
                 }
@@ -106,6 +144,7 @@ fun HomeScreen(
     }
 
     // 客户端分组（与后端 classify_type 同逻辑）；L7：remember 缓存，避免每帧重组重算
+    // 当 items 更新时自动重组（后台补齐时触发）
     val groups = remember(items) {
         HomeGroups(
             latest = items.take(12),
@@ -277,17 +316,6 @@ fun HomeScreen(
     }
 }
 
-/** 客户端 type_name → 分类（与后端 vodlist.classify_type 保持一致）。 */
-private fun classifyType(typeName: String?): String {
-    val t = typeName ?: ""
-    return when {
-        t.contains("动漫") || t.contains("动画") || t.contains("番剧") -> "anime"
-        t.contains("综艺") || t.contains("真人秀") || t.contains("选秀") || t.contains("音乐节目") -> "variety"
-        Regex("剧(?![情片])").containsMatchIn(t) -> "series"
-        else -> "movie"
-    }
-}
-
 /** 首页内容分组（L7：remember 缓存，避免每帧重组重复 filter 500 条）。 */
 private data class HomeGroups(
     val latest: List<VideoItem>,
@@ -296,6 +324,50 @@ private data class HomeGroups(
     val anime: List<VideoItem>,
     val variety: List<VideoItem>,
 )
+
+/**
+ * 后台异步补齐 /api/items 剩余批次（每批 500 条）。
+ * 与 Web 端 prefetchHomePool 逻辑一致：
+ * - 后端按「最新 2000 条 → 全局去重」切片返回
+ * - 每批都基于全局总数切片，total 恒为去重后总数，直接拼接无重复
+ * - 防兜底：前端按 (vodId, sourceCode) 再去重一次，防并发重复
+ * - 内容过滤：根据 filterEnabled 应用分级过滤
+ */
+private suspend fun prefetchHomeItems(
+    startOffset: Int,
+    totalCount: Int,
+    filterEnabled: Boolean,
+    onBatchReceived: (List<VideoItem>) -> Unit
+) {
+    try {
+        var offset = startOffset
+        while (offset < totalCount) {
+            val resp = ApiClient.get().items(offset = offset, limit = 500)
+            if (resp.isSuccessful) {
+                val body = resp.body()
+                val data = body?.data
+                if (body != null && body.code == 0 && data != null && data.items.isNotEmpty()) {
+                    // 应用内容分级过滤
+                    val filteredItems = if (filterEnabled) {
+                        ContentFilter.filterItems(data.items)
+                    } else {
+                        data.items
+                    }
+                    onBatchReceived(filteredItems)
+                    offset += data.items.size
+                } else {
+                    break
+                }
+            } else {
+                android.util.Log.e("HomeScreen", "补齐失败: ${resp.errorMessage()}")
+                break
+            }
+        }
+        android.util.Log.i("HomeScreen", "后台补齐完成: $offset / $totalCount")
+    } catch (e: Exception) {
+        android.util.Log.e("HomeScreen", "后台补齐异常", e)
+    }
+}
 
 /**
  * Hero 横幅（TV 大屏适配版）：全宽背景图 cover 铺满 + 文字层叠在左侧。
@@ -409,5 +481,16 @@ private fun HeroBanner(
                 )
             }
         }
+    }
+}
+
+/** 客户端 type_name → 分类（与后端 vodlist.classify_type 保持一致）。 */
+private fun classifyType(typeName: String?): String {
+    val t = typeName ?: ""
+    return when {
+        t.contains("动漫") || t.contains("动画") || t.contains("番剧") -> "anime"
+        t.contains("综艺") || t.contains("真人秀") || t.contains("选秀") || t.contains("音乐节目") -> "variety"
+        Regex("剧(?![情片])").containsMatchIn(t) -> "series"
+        else -> "movie"
     }
 }

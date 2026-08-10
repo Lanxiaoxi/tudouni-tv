@@ -33,6 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import com.tudouni.tv.data.ApiClient
+import com.tudouni.tv.data.ContentFilter
+import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.data.errorMessage
 import com.tudouni.tv.ui.components.EmptyState
@@ -66,7 +68,9 @@ fun CategoryScreen(
     initialCat: String?,
     onOpenDetail: (VideoItem) -> Unit,
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val settingsPreference = remember { SettingsPreference(context) }
     var cat by rememberSaveable(initialCat) { mutableStateOf(initialCat) }
     var items by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var total by remember { mutableStateOf(0) }
@@ -75,6 +79,7 @@ fun CategoryScreen(
     var loadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableStateOf(0) }
+    var contentFilterEnabled by remember { mutableStateOf(settingsPreference.isContentFilterEnabled()) }
     val gridState = rememberLazyGridState()
 
     // 二级细分类型（从已加载数据聚合，按出现频次取 top 10）+ 当前选中的细分
@@ -98,6 +103,48 @@ fun CategoryScreen(
             val resp = ApiClient.get().vodlist(cat = cat, pg = pageToLoad)
             if (resp.isSuccessful) {
                 val body = resp.body()
+                val data = body?.data
+                if (body != null && body.code == 0 && data != null) {
+                    // 应用内容分级过滤
+                    val filteredItems = if (contentFilterEnabled) {
+                        ContentFilter.filterItems(data.items)
+                    } else {
+                        data.items
+                    }
+                    
+                    if (isFirst) {
+                        items = filteredItems
+                        total = data.total
+                        page = 1
+                        // 聚合二级细分
+                        val typeNameFreq = mutableMapOf<String, Int>()
+                        for (item in items) {
+                            val type = item.typeName ?: continue
+                            typeNameFreq[type] = (typeNameFreq[type] ?: 0) + 1
+                        }
+                        subCats = typeNameFreq.entries
+                            .sortedByDescending { it.value }
+                            .take(10)
+                            .map { it.key }
+                        selectedSub = null
+                    } else {
+                        val existing = items.map { it.vodId to it.sourceCode }
+                        items = items + filteredItems.filter { (it.vodId to it.sourceCode) !in existing }
+                        total = data.total
+                        page = pageToLoad
+                    }
+                } else {
+                    error = body?.message ?: "加载失败"
+                }
+            } else {
+                error = resp.errorMessage()
+            }
+        } catch (e: Exception) {
+            error = "网络错误: ${e.message}"
+        } finally {
+            if (isFirst) loadingFirst = false else loadingMore = false
+        }
+    }
                 val data = body?.data
                 if (body != null && body.code == 0 && data != null) {
                     items = if (isFirst) {

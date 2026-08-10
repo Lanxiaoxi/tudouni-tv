@@ -1,6 +1,7 @@
 package com.tudouni.tv.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,8 @@ import androidx.compose.ui.unit.sp
 import com.tudouni.tv.BuildConfig
 import com.tudouni.tv.data.ApiClient
 import com.tudouni.tv.data.AuthStore
+import com.tudouni.tv.data.ContentFilter
+import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.ui.components.TvButton
 import com.tudouni.tv.ui.components.TvDialog
 import com.tudouni.tv.ui.components.PageHorizontalPadding
@@ -38,7 +41,7 @@ import com.tudouni.tv.ui.theme.TvType
 import kotlinx.coroutines.launch
 
 /**
- * 设置页（对应设计方案 §6.7 简化版）：账号信息 + 服务器地址 + 退出登录。
+ * 设置页（对应设计方案 §6.7）：账号信息 + 服务器地址 + 内容分级过滤 + 退出登录。
  * 分组卡片列表布局，焦点上下移动。
  */
 @Composable
@@ -48,10 +51,13 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val authStore = remember { AuthStore(context) }
+    val settingsPreference = remember { SettingsPreference(context) }
     val scope = rememberCoroutineScope()
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var contentFilterEnabled by remember { mutableStateOf(settingsPreference.isContentFilterEnabled()) }
+    var autoplayEnabled by remember { mutableStateOf(settingsPreference.isAutoplayEnabled()) }
 
-    // 初始焦点：给「退出登录」按钮（Compose 不自动聚焦，否则整页方向键不工作）
+    // 初始焦点：给「退出登录」按钮
     val logoutFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     androidx.compose.runtime.LaunchedEffect(Unit) { logoutFocus.requestFocus() }
 
@@ -89,12 +95,91 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(32.dp))
 
+        // 分组：内容管理
+        SettingsGroup(title = "内容管理") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "分级过滤",
+                        style = TvType.BodyMedium,
+                        color = TvColors.TextPrimary,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "过滤敏感内容（${ContentFilter.getBannedKeywordsCount()} 个关键词）",
+                        style = TvType.Caption,
+                        color = TvColors.TextTertiary,
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                // 简单的切换按钮（作为 TvButton 模拟）
+                TvButton(
+                    text = if (contentFilterEnabled) "开启" else "关闭",
+                    style = if (contentFilterEnabled)
+                        com.tudouni.tv.ui.components.TvButtonStyle.Primary
+                    else
+                        com.tudouni.tv.ui.components.TvButtonStyle.Secondary,
+                    onClick = {
+                        contentFilterEnabled = !contentFilterEnabled
+                        settingsPreference.setContentFilterEnabled(contentFilterEnabled)
+                    },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        // 分组：播放设置
+        SettingsGroup(title = "播放设置") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "自动连播",
+                        style = TvType.BodyMedium,
+                        color = TvColors.TextPrimary,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "播放结束自动播放下一集",
+                        style = TvType.Caption,
+                        color = TvColors.TextTertiary,
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                TvButton(
+                    text = if (autoplayEnabled) "开启" else "关闭",
+                    style = if (autoplayEnabled)
+                        com.tudouni.tv.ui.components.TvButtonStyle.Primary
+                    else
+                        com.tudouni.tv.ui.components.TvButtonStyle.Secondary,
+                    onClick = {
+                        autoplayEnabled = !autoplayEnabled
+                        settingsPreference.setAutoplayEnabled(autoplayEnabled)
+                    },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
         // 分组：说明
         SettingsGroup(title = "关于") {
             SettingsRow(label = "版本", value = BuildConfig.VERSION_NAME)
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "播放进度保存在服务端，换设备登录同一账号即可继续观看。",
+                text = "播放进度保存在服务端，换设备登录同一账号即可继续观看。分级过滤默认启用，可在设置中关闭。",
                 style = TvType.Caption,
                 color = TvColors.TextTertiary,
             )

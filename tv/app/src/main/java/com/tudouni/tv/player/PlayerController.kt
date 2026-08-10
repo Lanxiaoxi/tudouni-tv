@@ -35,6 +35,10 @@ class PlayerController(context: Context) {
     /** 当前是否正在播放（供 UI 显示播放/暂停态）。 */
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    private val _playbackEnded = MutableStateFlow(false)
+    /** 播放结束标记（供 PlayerScreen 监听自动连播）。 */
+    val playbackEnded: StateFlow<Boolean> = _playbackEnded.asStateFlow()
+
     val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
         addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -51,6 +55,10 @@ class PlayerController(context: Context) {
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 _isBuffering.value = playbackState == Player.STATE_BUFFERING
+
+                if (playbackState == Player.STATE_ENDED) {
+                    _playbackEnded.value = true
+                }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -72,6 +80,11 @@ class PlayerController(context: Context) {
 
     fun seekTo(positionMs: Long) {
         if (positionMs > 0) player.seekTo(positionMs)
+    }
+
+    /** 重置播放结束标记（播放新视频时调用）。 */
+    fun resetPlaybackEnded() {
+        _playbackEnded.value = false
     }
 
     /** 当前播放位置（毫秒；未就绪返回 0）。 */

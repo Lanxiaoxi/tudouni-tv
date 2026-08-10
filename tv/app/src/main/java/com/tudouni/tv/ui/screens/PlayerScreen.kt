@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
+import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.SourceSwitcher
 import com.tudouni.tv.data.TvRepository
 import com.tudouni.tv.data.VideoItem
@@ -97,6 +98,12 @@ fun PlayerScreen(
     val playerError by controller.error.collectAsState()
     val buffering by controller.isBuffering.collectAsState()
 
+    // 自动连播设置
+    val settingsPreference = remember { SettingsPreference(context) }
+    var autoplayEnabled by remember {
+        mutableStateOf(settingsPreference.isAutoplayEnabled())
+    }
+
     // 初始播放（带恢复位置）
     LaunchedEffect(Unit) {
         controller.play(url, resumePositionMs)
@@ -140,6 +147,20 @@ fun PlayerScreen(
             }
             playerViewRef?.player = null
             controller.release()
+        }
+    }
+
+    // 监听播放结束并自动连播
+    val playbackEnded by controller.playbackEnded.collectAsState()
+    LaunchedEffect(playbackEnded) {
+        if (playbackEnded) {
+            if (autoplayEnabled && currentIndex < epsState.size - 1) {
+                // 自动连播开启 && 有下一集
+                delay(1000)  // 1 秒延迟，给用户反应时间
+                switchEpisode(currentIndex + 1)
+            }
+            // 重置标记，否则播放下一集后还会触发
+            controller.resetPlaybackEnded()
         }
     }
 

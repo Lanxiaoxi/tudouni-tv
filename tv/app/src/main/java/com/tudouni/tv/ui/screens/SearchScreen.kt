@@ -35,7 +35,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tudouni.tv.data.ApiClient
+import com.tudouni.tv.data.ContentFilter
 import com.tudouni.tv.data.SearchHistoryItem
+import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.TvRepository
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.data.errorMessage
@@ -63,9 +65,11 @@ import kotlinx.coroutines.launch
 fun SearchScreen(
     onOpenDetail: (VideoItem) -> Unit,
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val hotGridState = rememberLazyGridState()
     val resultGridState = rememberLazyGridState()
+    val settingsPreference = remember { SettingsPreference(context) }
 
     var keyword by remember { mutableStateOf("") }
     // 已提交的搜索词（null = 未搜索，展示推荐区）
@@ -84,6 +88,7 @@ fun SearchScreen(
     var hotItems by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var hotLoading by remember { mutableStateOf(true) }
     var historyItems by remember { mutableStateOf<List<SearchHistoryItem>>(emptyList()) }
+    var contentFilterEnabled by remember { mutableStateOf(settingsPreference.isContentFilterEnabled()) }
 
     // 进入页面：并行拉热门推荐 + 最近搜索（搜索历史失败不阻塞页面）
     LaunchedEffect(Unit) {
@@ -92,7 +97,14 @@ fun SearchScreen(
             try {
                 val resp = ApiClient.get().items(offset = 0, limit = 24)
                 val data = resp.body()?.data
-                if (resp.isSuccessful && data != null) hotItems = data.items
+                if (resp.isSuccessful && data != null) {
+                    // 应用内容分级过滤
+                    hotItems = if (contentFilterEnabled) {
+                        ContentFilter.filterItems(data.items)
+                    } else {
+                        data.items
+                    }
+                }
             } catch (_: Exception) {
             } finally {
                 hotLoading = false
@@ -113,13 +125,20 @@ fun SearchScreen(
                 val body = resp.body()
                 val data = body?.data
                 if (body != null && body.code == 0 && data != null) {
+                    // 应用内容分级过滤
+                    val filteredItems = if (contentFilterEnabled) {
+                        ContentFilter.filterItems(data.items)
+                    } else {
+                        data.items
+                    }
+                    
                     if (page == 1) {
-                        resultItems = data.items
+                        resultItems = filteredItems
                         resultTotal = data.total
                     } else {
                         // 分页追加（按序去重 vod_id，避免跨页重复）
                         val existing = resultItems.map { it.vodId to it.sourceCode }
-                        resultItems = resultItems + data.items.filter { (it.vodId to it.sourceCode) !in existing }
+                        resultItems = resultItems + filteredItems.filter { (it.vodId to it.sourceCode) !in existing }
                         resultTotal = data.total
                     }
                     resultPage = page
