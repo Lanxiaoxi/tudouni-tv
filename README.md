@@ -10,7 +10,7 @@ TudouniTV 是一个前后端分离的视频聚合搜索工具。后端使用 **P
 - 服务器仅代理元数据（搜索结果、详情、封面图），并维护 **SQLite 数据库**（多用户体系 + 资源镜像表 + 缓存）
 - **多用户注册登录**：观看历史 / 搜索历史 / 偏好设置按用户隔离，换设备登录自动同步
 - **资源镜像表**：定时从资源站拉取索引，首页 / 分类 / 搜索本地查库，大幅减少对上游的实时请求
-- **爱奇艺热播板块**：后端拉取爱奇艺热播榜片名，映射到资源站聚合搜索结果，首页独立渲染（失败静默隐藏）
+- **热播榜单板块**：后端拉取爱奇艺 / 优酷 / 腾讯热播榜片名，映射到资源站聚合搜索结果，首页独立渲染（失败静默隐藏；内存缓存 5 天 + 数据库条目并集兜底）
 - 支持多源聚合搜索、换源测速、进度记忆、自动连播
 - 暗色 / 亮色双主题，响应式布局
 - **Android TV 客户端**（`tv/` 目录）：Kotlin + Jetpack Compose + Media3 ExoPlayer，对接同一后端 API
@@ -36,12 +36,15 @@ LibreTV/
 │   │   ├── sites.py    # 数据源定义 + CMS URL 构建（与前端 config.js 同步）
 │   │   ├── auth.py     # 注册 / 登录 / 登出，token 绑定用户
 │   │   ├── userdata.py # 用户数据端点（me / settings / history / search-history）
-│   │   ├── db.py       # SQLite 数据层（users / tokens / history / search_history / videos）
+│   │   ├── db.py       # SQLite 数据层（users / tokens / history / search_history / videos / hot_rank_items）
 │   │   ├── search.py   # 三级聚合搜索（TTL 缓存 → 镜像表 → 实时）
 │   │   ├── detail.py   # 视频详情（TTL 缓存）
 │   │   ├── vodlist.py  # 列表 / 分类（查镜像表，含源可达性测试）
 │   │   ├── home.py     # 首页数据（查镜像表）
-│   │   ├── iqiyi.py    # 爱奇艺热播榜 → 聚合搜索映射（30min 缓存 + 后台预热）
+│   │   ├── hotrank.py  # 热播榜通用框架（拉片名 → 聚合搜索 → 内存缓存 + 库兜底 + 预热，5 天 TTL）
+│   │   ├── iqiyi.py    # 爱奇艺热播榜片名抓取（复用 hotrank 框架）
+│   │   ├── youku.py    # 优酷热播榜片名抓取（解析榜单页 __INITIAL_DATA__）
+│   │   ├── tencent.py  # 腾讯热播榜片名抓取（POST getPage 频道接口）
 │   │   ├── cache.py    # 进程内 TTL 缓存（惰性过期 + LRU）
 │   │   ├── sync.py     # 资源镜像表轮转同步任务
 │   │   ├── proxy.py    # 通用代理（封面图等）
@@ -63,7 +66,8 @@ LibreTV/
 |----|------|------|
 | SQLite（持久） | 用户 / token / 观看历史 / 搜索历史 | 按用户隔离，服务端为准 |
 | SQLite（镜像表） | `videos` 资源索引 | 定时轮转同步，首页/分类/搜索本地查库 |
-| 内存 TTL 缓存 | 搜索 / 详情结果 | 惰性过期 + LRU，降低对上游请求频率 |
+| SQLite（热播条目） | `hot_rank_items` 热播榜条目并集 | 每次刷新成功并集合并（按 source+vod_id 去重），榜单拉取失败时兜底 |
+| 内存 TTL 缓存 | 搜索 / 详情 / 热播榜结果 | 惰性过期 + LRU，降低对上游请求频率（热播榜 5 天） |
 | localStorage | 前端本地缓存 | 仅当前账号的临时缓存，切换/登出即清空 |
 
 ## 快速开始
@@ -149,7 +153,9 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 9797
 | `GET` | `/api/search` | 聚合搜索（`wd`，三级：缓存→镜像表→实时） |
 | `GET` | `/api/vodlist` | 列表 / 分类（`source` / `cat` / `pg` + CMS 透传参数） |
 | `GET` | `/api/items` | 首页聚合数据（查镜像表） |
-| `GET` | `/api/iqiyi/hot` | 爱奇艺热播榜（榜单片名 → 聚合搜索映射，30min 缓存 + 后台预热） |
+| `GET` | `/api/iqiyi/hot` | 爱奇艺热播榜（榜单片名 → 聚合搜索映射，5 天缓存 + 后台预热 + 库兜底） |
+| `GET` | `/api/hotrank/youku` | 优酷热播榜（解析榜单页内嵌数据 → 聚合搜索映射，同上） |
+| `GET` | `/api/hotrank/tencent` | 腾讯热播榜（POST 频道接口 → 聚合搜索映射，同上） |
 | `GET` | `/api/site-test` | 数据源可达性测试（`source`，设置面板用） |
 | `GET` | `/api/proxy` | 通用代理（封面图等，`url` 参数） |
 | `GET` | `/api/detail` | 视频详情 + 播放地址（`id` / `source`） |
@@ -210,7 +216,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 9797
 - **Android TV 客户端**：Kotlin + Jetpack Compose + Media3 ExoPlayer + Retrofit
 - **样式**：Tailwind CSS + 自定义设计系统
 - **播放器**：ArtPlayer + HLS.js
-- **存储**：SQLite（多用户数据 + 资源镜像表）+ localStorage（前端缓存）+ 内存 TTL 缓存
+- **存储**：SQLite（多用户数据 + 资源镜像表 + 热播条目并集）+ localStorage（前端缓存）+ 内存 TTL 缓存
 - **PWA**：manifest.json + Service Worker
 
 ## 重要声明
