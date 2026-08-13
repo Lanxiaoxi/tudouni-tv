@@ -70,6 +70,10 @@ fun App() {
     var mainPageName by rememberSaveable { mutableStateOf(NavPage.HOME.name) }
     val mainPage = NavPage.valueOf(mainPageName)
 
+    // 初始焦点给导航栏当前页（默认首页）——一次性：首次进入主框架时请求，
+    // 之后置 false，避免从详情/播放页返回时焦点被抢回导航栏
+    var navInitialFocus by remember { mutableStateOf(true) }
+
     // 启动：读取已保存的登录态（token 与 username 并行读，减少 Loading 时长）
     LaunchedEffect(Unit) {
         if (screen is Screen.Loading) {
@@ -113,6 +117,8 @@ fun App() {
             MainFrame(
                 page = s.page,
                 username = username,
+                navInitialFocus = navInitialFocus,
+                onNavFocusConsumed = { navInitialFocus = false },
                 onPageChange = { p ->
                     mainPageName = p.name
                     screen = Screen.Main(p)
@@ -160,13 +166,20 @@ fun App() {
 private fun MainFrame(
     page: NavPage,
     username: String,
+    navInitialFocus: Boolean,
+    onNavFocusConsumed: () -> Unit,
     onPageChange: (NavPage) -> Unit,
     onOpenDetail: (VideoItem) -> Unit,
     onPlay: (VideoItem, String, List<String>, Int, Long) -> Unit,
     onLogout: () -> Unit,
 ) {
     Row(Modifier.fillMaxSize()) {
-        TvNavRail(currentPage = page, onSelect = onPageChange)
+        TvNavRail(
+            currentPage = page,
+            onSelect = onPageChange,
+            initialFocus = navInitialFocus,
+            onFocusConsumed = onNavFocusConsumed,
+        )
         val stateHolder = rememberSaveableStateHolder()
         stateHolder.SaveableStateProvider(page.name) {
             Box(Modifier.weight(1f).fillMaxHeight()) {

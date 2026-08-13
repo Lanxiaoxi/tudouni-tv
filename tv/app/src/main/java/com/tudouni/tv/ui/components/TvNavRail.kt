@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,6 +58,8 @@ fun TvNavRail(
     currentPage: NavPage,
     onSelect: (NavPage) -> Unit,
     modifier: Modifier = Modifier,
+    initialFocus: Boolean = false,
+    onFocusConsumed: () -> Unit = {},
 ) {
     // 显示顺序：上区（搜索/历史观看/设置）+ 下区（首页/电影/剧集/动漫/综艺）
     val pages = remember {
@@ -68,6 +71,16 @@ fun TvNavRail(
     val focusRequesters = remember { pages.map { FocusRequester() } }
     val brandBrush = remember {
         Brush.horizontalGradient(listOf(TvColors.AccentStrong, TvColors.Accent))
+    }
+
+    // 初始焦点：进入主框架时落在当前页导航项（默认首页）——一次性，
+    // 由外部 onFocusConsumed 置 false，避免从详情/播放页返回时焦点被抢回导航栏
+    LaunchedEffect(Unit) {
+        if (initialFocus) {
+            val idx = pages.indexOf(currentPage).coerceAtLeast(0)
+            focusRequesters[idx].requestFocus()
+            onFocusConsumed()
+        }
     }
 
     Column(

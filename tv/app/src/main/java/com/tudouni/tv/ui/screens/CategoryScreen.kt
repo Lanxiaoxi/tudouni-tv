@@ -34,6 +34,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.tudouni.tv.data.ApiClient
+import com.tudouni.tv.data.CategoryCache
 import com.tudouni.tv.data.ContentFilter
 import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.VideoItem
@@ -134,6 +135,8 @@ fun CategoryScreen(
                         total = data.total
                         page = pageToLoad
                     }
+                    // 加载成功写入缓存（TTL 100 分钟，切页/返回直接命中）
+                    CategoryCache.put(cat ?: "", contentFilterEnabled, items, total, page)
                 } else {
                     error = body?.message ?: "加载失败"
                 }
@@ -147,12 +150,22 @@ fun CategoryScreen(
         }
     }
 
-    // 切换分类 → 重载第一页（并清空细分选择）
+    // 切换分类 → 优先读缓存（TTL 100 分钟），命中直接渲染不请求；未命中才加载第一页
     LaunchedEffect(cat, retryKey) {
-        items = emptyList()
-        selectedSub = null
-        page = 1
-        load(1, isFirst = true)
+        val cached = CategoryCache.get(cat ?: "", contentFilterEnabled)
+        if (cached != null) {
+            items = cached.first
+            total = cached.second
+            page = cached.third
+            loadingFirst = false
+            error = null
+            selectedSub = null
+        } else {
+            items = emptyList()
+            selectedSub = null
+            page = 1
+            load(1, isFirst = true)
+        }
     }
 
     // 已加载数据变化 → 重新聚合细分类型

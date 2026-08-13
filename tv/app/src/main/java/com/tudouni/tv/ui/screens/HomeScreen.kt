@@ -90,13 +90,15 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val settingsPreference = remember { SettingsPreference(context) }
+    // 内容分级过滤（需在 preloaded 之前声明——缓存读取要带过滤状态）
+    var contentFilterEnabled by remember { mutableStateOf(settingsPreference.isContentFilterEnabled()) }
 
-    // 开屏预拉缓存：App Loading 期间已后台拉好首批数据 → 进入首页直接渲染内容，
-    // 不再显示加载画面（仅首次组合消费一次；无缓存则走正常加载）
-    val preloaded = remember { HomePrefetch.consume() }
-    var items by remember { mutableStateOf(preloaded.first) }
-    var totalCount by remember { mutableStateOf(preloaded.second) }  // 后端返回的全局总数
-    var loading by remember { mutableStateOf(preloaded.first.isEmpty()) }
+    // 首页缓存：App 开屏预拉或上次加载成功写入，TTL 100 分钟内进入/切回秒开；
+    // 无缓存（冷启动预拉失败/过期）则走正常加载
+    val preloaded = remember { HomePrefetch.get(contentFilterEnabled) }
+    var items by remember { mutableStateOf(preloaded?.first ?: emptyList()) }
+    var totalCount by remember { mutableStateOf(preloaded?.second ?: 0) }  // 后端返回的全局总数
+    var loading by remember { mutableStateOf(preloaded == null) }
     var prefetching by remember { mutableStateOf(false) }  // 后台补齐状态
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableStateOf(0) }
@@ -104,16 +106,9 @@ fun HomeScreen(
     var iqiyiItems by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     // Hero「立即播放」需要先拉详情拿第一集地址
     var heroPlaying by remember { mutableStateOf(false) }
-    var contentFilterEnabled by remember { mutableStateOf(settingsPreference.isContentFilterEnabled()) }
 
-    // 初始焦点：Compose 不会自动聚焦第一个控件，必须显式请求，
-    // 否则整页方向键焦点导航不工作。加载完成后把焦点给 Hero「立即播放」。
+    // Hero「立即播放」焦点（初始焦点在导航栏首页；此 requester 仅用于轮换动画后焦点恢复）
     val heroPlayFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(loading, items.isEmpty()) {
-        if (!loading && items.isNotEmpty()) {
-            heroPlayFocus.requestFocus()
-        }
-    }
 
     // Hero 轮换：取 items 前 5 个（沿用 firstOrNull 的排序，只是数量变多），自动定时切换
     val heroCandidates = items.take(5)
@@ -162,6 +157,8 @@ fun HomeScreen(
 
                         items = filteredItems
                         totalCount = data.total
+                        // 写缓存（TTL 100 分钟，带过滤状态）：下次进入/切回首页直接命中秒开
+                        HomePrefetch.put(contentFilterEnabled, filteredItems, data.total)
                     } else {
                         error = body?.message ?: "加载失败"
                     }
