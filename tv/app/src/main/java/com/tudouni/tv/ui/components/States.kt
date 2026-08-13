@@ -5,13 +5,16 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,9 +25,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tudouni.tv.R
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvShapes
 import com.tudouni.tv.ui.theme.TvType
@@ -46,6 +53,45 @@ fun FullScreenLoading(text: String = "加载中…") {
                 text = text,
                 style = TvType.BodyMedium,
                 color = TvColors.TextSecondary,
+            )
+        }
+    }
+}
+
+/**
+ * 开屏图（Splash）：全屏展示 start_4k 设计稿 + 底部加载转圈。
+ * 用于 App 启动检查登录态 / 首页首批数据加载期间——开屏图持续到数据到位，
+ * 加载完成直接进入内容页，不再中途切换文案。无焦点组件（纯展示），
+ * ContentScale.Crop 铺满，底部深色渐变保证加载提示可读。
+ */
+@Composable
+fun SplashScreen() {
+    Box(Modifier.fillMaxSize()) {
+        Image(
+            painter = painterResource(R.drawable.start_4k),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        // 底部渐变遮罩 + 加载提示（仅转圈，不显示过渡文案）
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            TvColors.BgBase.copy(alpha = 0.92f),
+                        ),
+                    )
+                )
+                .padding(vertical = 56.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator(
+                color = TvColors.Accent,
+                modifier = Modifier.size(48.dp),
             )
         }
     }

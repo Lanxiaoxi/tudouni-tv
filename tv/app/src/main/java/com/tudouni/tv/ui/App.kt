@@ -2,14 +2,9 @@ package com.tudouni.tv.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,13 +13,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import com.tudouni.tv.data.ApiClient
 import com.tudouni.tv.data.AuthStore
+import com.tudouni.tv.data.HomePrefetch
+import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.VideoItem
+import com.tudouni.tv.ui.components.SplashScreen
 import com.tudouni.tv.ui.components.TvNavRail
 import com.tudouni.tv.ui.navigation.NavPage
 import com.tudouni.tv.ui.screens.CategoryScreen
@@ -81,6 +77,9 @@ fun App() {
             if (!t.isNullOrEmpty()) {
                 ApiClient.configure(t)
                 username = u ?: ""
+                // 开屏期间预拉首页首批数据（与 token 检查衔接，数据到位才进主页——
+                // 开屏图一次到底，进入主页直接见内容；预拉失败则 HomeScreen 自行加载兜底）
+                HomePrefetch.load(SettingsPreference(context).isContentFilterEnabled())
                 screen = Screen.Main(mainPage)
             } else {
                 screen = Screen.Login
@@ -93,7 +92,7 @@ fun App() {
     }
 
     when (val s = screen) {
-        is Screen.Loading -> LoadingView()
+        is Screen.Loading -> SplashScreen()
 
         is Screen.Login -> LoginScreen(
             authStore = authStore,
@@ -208,18 +207,4 @@ private fun NavPage.toCat(): String? = when (this) {
     NavPage.ANIME -> "anime"
     NavPage.VARIETY -> "variety"
     else -> null
-}
-
-@Composable
-private fun LoadingView() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
-            Spacer(Modifier.height(16.dp))
-            Text(text = "加载中…")
-        }
-    }
 }

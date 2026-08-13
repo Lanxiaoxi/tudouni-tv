@@ -56,6 +56,7 @@ import coil.compose.AsyncImage
 import com.tudouni.tv.data.ApiClient
 import com.tudouni.tv.data.ContentFilter
 import com.tudouni.tv.data.DetailResponse
+import com.tudouni.tv.data.HomePrefetch
 import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.data.errorMessage
@@ -90,9 +91,12 @@ fun HomeScreen(
     val listState = rememberLazyListState()
     val settingsPreference = remember { SettingsPreference(context) }
 
-    var items by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
-    var totalCount by remember { mutableStateOf(0) }  // 后端返回的全局总数
-    var loading by remember { mutableStateOf(true) }
+    // 开屏预拉缓存：App Loading 期间已后台拉好首批数据 → 进入首页直接渲染内容，
+    // 不再显示加载画面（仅首次组合消费一次；无缓存则走正常加载）
+    val preloaded = remember { HomePrefetch.consume() }
+    var items by remember { mutableStateOf(preloaded.first) }
+    var totalCount by remember { mutableStateOf(preloaded.second) }  // 后端返回的全局总数
+    var loading by remember { mutableStateOf(preloaded.first.isEmpty()) }
     var prefetching by remember { mutableStateOf(false) }  // 后台补齐状态
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableStateOf(0) }
@@ -137,53 +141,55 @@ fun HomeScreen(
     }
 
     LaunchedEffect(retryKey) {
-        loading = true
         prefetching = false
         error = null
-        items = emptyList()
-        totalCount = 0
-        try {
-            // 首屏：拉取第一批 500 条
-            val resp = ApiClient.get().items(offset = 0, limit = 500)
-            if (resp.isSuccessful) {
-                val body = resp.body()
-                val data = body?.data
-                if (body != null && body.code == 0 && data != null) {
-                    // 应用内容分级过滤
-                    var filteredItems = data.items
-                    if (contentFilterEnabled) {
-                        filteredItems = ContentFilter.filterItems(filteredItems)
-                    }
-                    
-                    items = filteredItems
-                    totalCount = data.total
-                    // 后台补齐剩余批次（不阻塞首屏）
-                    if (data.total > filteredItems.size) {
-                        scope.launch {
-                            prefetchHomeItems(filteredItems.size, data.total, contentFilterEnabled) { newItems ->
-                                // 合并新数据并去重
-                                val seen = items.map { it.vodId to it.sourceCode }.toSet()
-                                val fresh = newItems.filter { (it.vodId to it.sourceCode) !in seen }
-                                if (fresh.isNotEmpty()) {
-                                    items = items + fresh
-                                    // 记录日志
-                                    android.util.Log.d("HomeScreen", "后台补齐: ${items.size} / $totalCount")
-                                }
-                            }
-                            prefetching = false
+        // 无预拉数据（含重试/冷启动未命中缓存）才做首屏拉取；预拉成功则跳过，直接渲染 + 后台补齐
+        if (items.isEmpty()) {
+            loading = true
+            totalCount = 0
+            try {
+                // 首屏：拉取第一批 500 条
+                val resp = ApiClient.get().items(offset = 0, limit = 500)
+                if (resp.isSuccessful) {
+                    val body = resp.body()
+                    val data = body?.data
+                    if (body != null && body.code == 0 && data != null) {
+                        // 应用内容分级过滤
+                        var filteredItems = data.items
+                        if (contentFilterEnabled) {
+                            filteredItems = ContentFilter.filterItems(filteredItems)
                         }
-                        prefetching = true
+
+                        items = filteredItems
+                        totalCount = data.total
+                    } else {
+                        error = body?.message ?: "加载失败"
                     }
                 } else {
-                    error = body?.message ?: "加载失败"
+                    error = resp.errorMessage()
                 }
-            } else {
-                error = resp.errorMessage()
+            } catch (e: Exception) {
+                error = "网络错误: ${e.message}"
+            } finally {
+                loading = false
             }
-        } catch (e: Exception) {
-            error = "网络错误: ${e.message}"
-        } finally {
-            loading = false
+        }
+        // 后台补齐剩余批次（预拉或首屏拉取后统一走：total > items.size）
+        if (error == null && totalCount > items.size) {
+            scope.launch {
+                prefetchHomeItems(items.size, totalCount, contentFilterEnabled) { newItems ->
+                    // 合并新数据并去重
+                    val seen = items.map { it.vodId to it.sourceCode }.toSet()
+                    val fresh = newItems.filter { (it.vodId to it.sourceCode) !in seen }
+                    if (fresh.isNotEmpty()) {
+                        items = items + fresh
+                        // 记录日志
+                        android.util.Log.d("HomeScreen", "后台补齐: ${items.size} / $totalCount")
+                    }
+                }
+                prefetching = false
+            }
+            prefetching = true
         }
     }
 
@@ -247,6 +253,7 @@ fun HomeScreen(
     }
 
     when {
+        // 兜底：无预拉缓存且加载失败前（冷启动预拉未命中时）显示普通加载转圈
         loading && items.isEmpty() -> FullScreenLoading()
 
         error != null && items.isEmpty() -> EmptyState(
