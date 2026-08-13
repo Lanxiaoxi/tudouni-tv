@@ -47,6 +47,7 @@ import com.tudouni.tv.ui.components.FullScreenLoading
 import com.tudouni.tv.ui.components.PageHorizontalPadding
 import com.tudouni.tv.ui.components.PosterCard
 import com.tudouni.tv.ui.components.RowCardSpacing
+import com.tudouni.tv.ui.components.TvButton
 import com.tudouni.tv.ui.components.TvChip
 import com.tudouni.tv.ui.components.TvTextKeyboard
 import com.tudouni.tv.ui.theme.TvColors
@@ -227,31 +228,45 @@ fun SearchScreen(
             Text(text = "搜索", style = TvType.PageTitle, color = TvColors.TextPrimary)
         }
 
-        // 输入显示区（当前输入内容大字回显）
-        Box(
+        // 输入显示区（当前输入内容大字回显）+ 右侧「完成」按钮
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = PageHorizontalPadding)
-                .height(64.dp)
-                .background(TvColors.BgElevated, TvShapes.Button)
-                .padding(horizontal = 24.dp),
-            contentAlignment = Alignment.CenterStart,
+                .padding(horizontal = PageHorizontalPadding),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (keyword.isEmpty()) {
-                Text(
-                    text = "输入片名 / 拼音搜索",
-                    style = TvType.BodyLarge.copy(fontSize = 22.sp),
-                    color = TvColors.TextTertiary,
-                )
-            } else {
-                Text(
-                    text = keyword,
-                    style = TvType.BodyLarge.copy(fontSize = 26.sp),
-                    color = TvColors.TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(64.dp)
+                    .background(TvColors.BgElevated, TvShapes.Button)
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (keyword.isEmpty()) {
+                    Text(
+                        text = "输入片名 / 拼音搜索",
+                        style = TvType.BodyLarge.copy(fontSize = 22.sp),
+                        color = TvColors.TextTertiary,
+                    )
+                } else {
+                    Text(
+                        text = keyword,
+                        style = TvType.BodyLarge.copy(fontSize = 26.sp),
+                        color = TvColors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
+            Spacer(Modifier.width(14.dp))
+            // 「搜索」：搜索框右侧，与搜索框同高（64dp 默认高度），输入非空才可用
+            TvButton(
+                text = "搜索",
+                onClick = { doSearch(keyword) },
+                enabled = keyword.isNotEmpty(),
+                fontSize = 18.sp,
+            )
         }
         Spacer(Modifier.height(14.dp))
 
