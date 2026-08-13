@@ -31,8 +31,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,8 +63,8 @@ import kotlinx.coroutines.launch
 
 /**
  * 播放页（对应设计方案 §6.5）：
- * - 左 65%：Media3 播放器（16:9，PlayerView 自带控制条）
- * - 右 35%：片名 + 选集网格（当前集 accent 高亮，0-9 跳集，焦点移动即切集）
+ * - 左 70%：Media3 播放器（16:9，PlayerView 自带控制条）
+ * - 右 30%：片名 + 选集网格（当前集 accent 高亮，0-9 跳集，焦点移动即切集）
  * - 进度记忆（跨设备断点续播）：
  *   ① 恢复：进入时 seekTo(resumePositionMs)（详情页已判定是否值得恢复）
  *   ② 上报：播放中每 10s + 退出页面时一次 → PUT /api/history（服务端按 user_id 隔离，天然跨设备）
@@ -66,6 +72,7 @@ import kotlinx.coroutines.launch
  * H2 修复：监听播放器错误/缓冲状态 → 错误浮层（重试/换源/返回）+ 缓冲中加载指示
  * M1 修复：换集立即上报（force=true，即使时长未知也更新集数）
  * L5 修复：播放页保持屏幕常亮
+ * 2026-08-13：全屏时返回/全屏按钮自动隐藏（3s 无操作），方向键/OK 唤醒
  */
 @Composable
 fun PlayerScreen(
@@ -187,11 +194,27 @@ fun PlayerScreen(
 
     // 全屏：隐藏右侧选集栏 + 底部标题区，播放器占满整个页面
     var isFullscreen by remember { mutableStateOf(false) }
+    // 全屏时顶部控制条（返回/全屏按钮）可见性：初始显示，3s 无操作自动隐藏，方向键/OK 唤醒
+    var controlsVisible by remember { mutableStateOf(true) }
+    // 唤醒/交互计数：每次按键 +1，触发计时器重启（重新计算 3s）
+    var controlTick by remember { mutableIntStateOf(0) }
     val fullscreenButtonFocus = remember { FocusRequester() }
+
     LaunchedEffect(isFullscreen) {
-        if (isFullscreen && playerError == null) {
-            delay(100) // 等待按钮组合完成
-            runCatching { fullscreenButtonFocus.requestFocus() }
+        if (isFullscreen) {
+            controlsVisible = true // 进入全屏先显示控制条（退出后再进入时重置）
+            if (playerError == null) {
+                delay(100) // 等待按钮组合完成
+                runCatching { fullscreenButtonFocus.requestFocus() }
+            }
+        }
+    }
+
+    // 全屏控制条自动隐藏计时器：显示后 3s 无操作隐藏；controlTick 变化即重启
+    LaunchedEffect(isFullscreen, controlsVisible, controlTick) {
+        if (isFullscreen && controlsVisible) {
+            delay(CONTROLS_AUTO_HIDE_MS)
+            controlsVisible = false
         }
     }
 
@@ -236,11 +259,43 @@ fun PlayerScreen(
         }
     }
 
-    Row(Modifier.fillMaxSize().background(TvColors.BgBase)) {
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TvColors.BgBase)
+            // 全屏控制条交互：方向键/OK 键唤醒隐藏的控制条（隐藏时消费按键并重新聚焦）；
+            // 控制条可见时放行按键（按钮正常接收焦点导航），仅重启自动隐藏计时
+            .onPreviewKeyEvent { event ->
+                if (isFullscreen && event.type == KeyEventType.KeyDown) {
+                    when (event.key) {
+                        Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight,
+                        Key.Enter, Key.DirectionCenter -> {
+                            val wasHidden = !controlsVisible
+                            controlTick++ // 任何交互都重启自动隐藏计时
+                            if (wasHidden) {
+                                controlsVisible = true
+                                if (playerError == null) {
+                                    scope.launch {
+                                        delay(100) // 等按钮重新组合后再聚焦
+                                        runCatching { fullscreenButtonFocus.requestFocus() }
+                                    }
+                                }
+                                true // 唤醒：消费本次按键，避免落到隐藏的按钮/播放器上
+                            } else {
+                                false // 可见：放行，按钮正常接收焦点导航
+                            }
+                        }
+                        else -> false
+                    }
+                } else {
+                    false
+                }
+            },
+    ) {
         // 左：播放器（全屏时占满整个页面，隐藏右侧选集栏）
         Column(
             modifier = Modifier
-                .weight(if (isFullscreen) 1f else 0.65f)
+                .weight(if (isFullscreen) 1f else 0.70f)
                 .fillMaxSize()
                 .padding(if (isFullscreen) 0.dp else 24.dp),
         ) {
@@ -268,6 +323,8 @@ fun PlayerScreen(
                         Text("缓冲中…", style = TvType.BodyMedium, color = TvColors.TextSecondary)
                     }
                 }
+                // 全屏时控制条自动隐藏：按钮透明但保留组合（避免焦点丢失后按键无法唤醒）
+                val controlsShown = !isFullscreen || controlsVisible
                 // 返回按钮：左上角常驻（行为与遥控器返回键一致：全屏先退全屏）
                 if (playerError == null) {
                     TvButton(
@@ -278,7 +335,8 @@ fun PlayerScreen(
                         onClick = { if (isFullscreen) isFullscreen = false else onBack() },
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(16.dp),
+                            .padding(16.dp)
+                            .alpha(if (controlsShown) 1f else 0f),
                     )
                 }
                 // 全屏切换按钮：右上角，常驻显示，遥控器可直接聚焦（compact 小尺寸）
@@ -292,7 +350,8 @@ fun PlayerScreen(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(16.dp)
-                            .focusRequester(fullscreenButtonFocus),
+                            .focusRequester(fullscreenButtonFocus)
+                            .alpha(if (controlsShown) 1f else 0f),
                     )
                 }
                 // H2：播放错误浮层（重试 / 换源 / 返回）
@@ -371,7 +430,7 @@ fun PlayerScreen(
         if (!isFullscreen) {
             Column(
                 modifier = Modifier
-                    .weight(0.35f)
+                    .weight(0.30f)
                     .fillMaxSize()
                     .background(TvColors.BgSurface)
                     .padding(horizontal = 24.dp, vertical = 28.dp),
@@ -393,12 +452,19 @@ fun PlayerScreen(
                     currentIndex = currentIndex,
                     onSelect = { index -> switchEpisode(index) },
                     initialFocusIndex = currentIndex,
+                    // 70:30 布局下选集列变窄，集数框缩小 30%（96×64 → 67×45，26sp → 18sp）
+                    cellWidth = 67.dp,
+                    cellHeight = 45.dp,
+                    fontSize = 18.sp,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
         }
     }
 }
+
+/** 全屏时顶部控制条无操作自动隐藏的延迟时长。 */
+private const val CONTROLS_AUTO_HIDE_MS = 3_000L
 
 /** 从 Compose Context 找宿主 Activity（用于 FLAG_KEEP_SCREEN_ON）。 */
 private fun Context.findActivity(): Activity? = when (this) {

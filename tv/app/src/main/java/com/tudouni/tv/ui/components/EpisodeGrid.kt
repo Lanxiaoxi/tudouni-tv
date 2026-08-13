@@ -36,6 +36,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tudouni.tv.ui.theme.TvColors
@@ -44,7 +46,8 @@ import com.tudouni.tv.ui.theme.TvType
 
 /**
  * 选集网格（对应设计方案 §5.8）：
- * - 单元 96×64dp、圆角 12dp、gap 12dp、文本 26sp/600
+ * - 默认单元 96×64dp、圆角 12dp、gap 12dp、文本 26sp/600；可通过 [cellWidth]/[cellHeight]/[fontSize] 定制
+ *   （播放页 70:30 布局下传 67×45dp + 18sp，2026-08-13）
  * - 默认：--bg-elevated + 次级字；当前集：accent 底 + 深字（800）
  * - 焦点：scale 1.08 + 白描边（当前集）/ accent 描边（普通项）—— 已选中 ≠ 焦点所在，视觉可区分
  * - 方向键网格移动；数字键 0-9 直接跳集（1-9 → 1-9 集，0 → 第 10 集）；滚动跟随
@@ -57,6 +60,9 @@ fun EpisodeGrid(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     initialFocusIndex: Int? = null,
+    cellWidth: Dp = 96.dp,
+    cellHeight: Dp = 64.dp,
+    fontSize: TextUnit = 26.sp,
 ) {
     val gridState = rememberLazyGridState()
 
@@ -108,7 +114,7 @@ fun EpisodeGrid(
     }
 
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(108.dp),
+        columns = GridCells.Adaptive(cellWidth + 12.dp),
         state = gridState,
         modifier = modifier
             .fillMaxSize()
@@ -122,6 +128,9 @@ fun EpisodeGrid(
                 index = index,
                 isCurrent = index == currentIndex,
                 onClick = { onSelect(index) },
+                cellWidth = cellWidth,
+                cellHeight = cellHeight,
+                fontSize = fontSize,
                 modifier = if (index == initialFocusIndex) Modifier.focusRequester(initialFocusRequester) else Modifier,
             )
         }
@@ -133,6 +142,9 @@ private fun EpisodeCell(
     index: Int,
     isCurrent: Boolean,
     onClick: () -> Unit,
+    cellWidth: Dp,
+    cellHeight: Dp,
+    fontSize: TextUnit,
     modifier: Modifier = Modifier,
 ) {
     val shape = TvShapes.Episode
@@ -164,8 +176,8 @@ private fun EpisodeCell(
 
     Box(
         modifier = modifier
-            .width(96.dp)
-            .height(64.dp)
+            .width(cellWidth)
+            .height(cellHeight)
             .graphicsLayer {
                 scaleX = animatedScale
                 scaleY = animatedScale
@@ -182,6 +194,7 @@ private fun EpisodeCell(
         Text(
             text = (index + 1).toString(),
             style = TvType.BodyMedium.copy(
+                fontSize = fontSize,
                 fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.SemiBold,
             ),
             color = textColor,
