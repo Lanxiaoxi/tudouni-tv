@@ -1,6 +1,18 @@
 package com.tudouni.tv.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,14 +32,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
@@ -53,6 +68,7 @@ import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.navigation.NavPage
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -92,6 +108,31 @@ fun HomeScreen(
     LaunchedEffect(loading, items.isEmpty()) {
         if (!loading && items.isNotEmpty()) {
             heroPlayFocus.requestFocus()
+        }
+    }
+
+    // Hero 轮换：取 items 前 5 个（沿用 firstOrNull 的排序，只是数量变多），自动定时切换
+    val heroCandidates = items.take(5)
+    var heroIndex by remember { mutableIntStateOf(0) }
+    // 手动切换指示器时 +1，重启自动轮换计时（避免刚手动选完立刻被自动切走）
+    var heroRotateTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(heroCandidates.size, heroRotateTick) {
+        if (heroCandidates.size > 1) {
+            while (true) {
+                delay(HERO_ROTATE_INTERVAL_MS)
+                heroIndex = (heroIndex + 1) % heroCandidates.size
+            }
+        }
+    }
+    // heroIndex 越界保护（items 后台补齐/过滤后数量可能变化；空列表时取 0 避免 coerceIn 空区间异常）
+    val safeHeroIndex = heroIndex.coerceIn(0, (heroCandidates.size - 1).coerceAtLeast(0))
+    // 记录用户焦点是否在 Hero 区域（切换动画重建内容会丢焦点，动画结束后需恢复）
+    var heroFocused by remember { mutableStateOf(false) }
+    val latestHeroFocused by rememberUpdatedState(heroFocused)
+    LaunchedEffect(safeHeroIndex) {
+        if (latestHeroFocused) {
+            delay(HERO_TRANSITION_ANIM_MS + 100) // 等动画结束、新内容组合完成
+            runCatching { heroPlayFocus.requestFocus() }
         }
     }
 
@@ -216,7 +257,8 @@ fun HomeScreen(
         )
 
         else -> {
-            val hero = items.firstOrNull()
+            // 轮换：取前 5 个，当前显示 safeHeroIndex 对应的项
+            val hero = heroCandidates.getOrNull(safeHeroIndex)
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
@@ -246,17 +288,61 @@ fun HomeScreen(
                     }
                 }
 
-                // Hero 横幅
+                // Hero 横幅（轮换：5 个候选，指示器在卡片正下方居中）
                 if (hero != null) {
                     item(key = "hero") {
                         Column {
-                            HeroBanner(
-                                item = hero,
-                                playing = heroPlaying,
-                                onPlay = { playFirst(hero) },
-                                onDetail = { onOpenDetail(hero) },
-                                playFocusRequester = heroPlayFocus,
-                            )
+                            // 焦点跟踪：Hero 区域是否持有焦点（切换动画重建内容后需恢复焦点）
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onFocusChanged { heroFocused = it.hasFocus },
+                            ) {
+                                // 轮换过渡：新 Hero 淡入 + 轻微放大，旧 Hero 淡出（400ms）
+                                AnimatedContent(
+                                    targetState = safeHeroIndex,
+                                    transitionSpec = {
+                                        (
+                                            fadeIn(tween(400, easing = FastOutSlowInEasing)) +
+                                                scaleIn(
+                                                    initialScale = 1.04f,
+                                                    animationSpec = tween(400, easing = FastOutSlowInEasing),
+                                                )
+                                            ) togetherWith (
+                                            fadeOut(tween(350, easing = FastOutSlowInEasing)) +
+                                                scaleOut(
+                                                    targetScale = 1.04f,
+                                                    animationSpec = tween(350, easing = FastOutSlowInEasing),
+                                                )
+                                            )
+                                    },
+                                    label = "heroRotate",
+                                ) { index ->
+                                    val currentHero = heroCandidates.getOrNull(index)
+                                    if (currentHero != null) {
+                                        HeroBanner(
+                                            item = currentHero,
+                                            playing = heroPlaying,
+                                            onPlay = { playFirst(currentHero) },
+                                            onDetail = { onOpenDetail(currentHero) },
+                                            playFocusRequester = heroPlayFocus,
+                                        )
+                                    }
+                                }
+                            }
+                            // 轮换指示器：整个 Hero 区域正下方居中显示
+                            if (heroCandidates.size > 1) {
+                                Spacer(Modifier.height(16.dp))
+                                HeroIndicators(
+                                    count = heroCandidates.size,
+                                    current = safeHeroIndex,
+                                    onSelect = { i ->
+                                        heroIndex = i
+                                        heroRotateTick++ // 手动选择后重新计时
+                                    },
+                                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                                )
+                            }
                             // U7：Hero 与下方内容行拉开视觉间距
                             Spacer(Modifier.height(24.dp))
                         }
@@ -318,20 +404,6 @@ fun HomeScreen(
                         }
                     }
                 }
-                if (groups.anime.isNotEmpty()) {
-                    item(key = "row_anime") {
-                        Column {
-                            Spacer(Modifier.height(28.dp))
-                            ContentRow(
-                                title = "动漫番剧",
-                                items = groups.anime,
-                                onClickItem = onOpenDetail,
-                                showMore = true,
-                                onMore = { onOpenCategory(NavPage.ANIME) },
-                            )
-                        }
-                    }
-                }
                 if (groups.variety.isNotEmpty()) {
                     item(key = "row_variety") {
                         Column {
@@ -342,6 +414,20 @@ fun HomeScreen(
                                 onClickItem = onOpenDetail,
                                 showMore = true,
                                 onMore = { onOpenCategory(NavPage.VARIETY) },
+                            )
+                        }
+                    }
+                }
+                if (groups.anime.isNotEmpty()) {
+                    item(key = "row_anime") {
+                        Column {
+                            Spacer(Modifier.height(28.dp))
+                            ContentRow(
+                                title = "动漫番剧",
+                                items = groups.anime,
+                                onClickItem = onOpenDetail,
+                                showMore = true,
+                                onMore = { onOpenCategory(NavPage.ANIME) },
                             )
                         }
                     }
@@ -424,7 +510,7 @@ private fun HeroBanner(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(380.dp)
+            .height(342.dp) // 2026-08-13：Hero 整体缩小 10%（原 380dp）
             .padding(horizontal = 72.dp)
             .clip(shape)
             .background(TvColors.BgSurface),
@@ -519,6 +605,54 @@ private fun HeroBanner(
         }
     }
 }
+
+/**
+ * Hero 轮换指示器：一排可聚焦横条，左右键切换 Hero。
+ * 焦点即选中（无需按 OK）：焦点移入横条立即切换；当前项 accent 金色加宽，其余灰色；焦点白描边。
+ */
+@Composable
+private fun HeroIndicators(
+    count: Int,
+    current: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        repeat(count) { i ->
+            val interactionSource = remember { MutableInteractionSource() }
+            val isFocused by interactionSource.collectIsFocusedAsState()
+            val selected = i == current
+            // 焦点即选中：横条获得焦点时立即触发切换（不消费按键，方向键仍可继续移动焦点）
+            LaunchedEffect(isFocused) {
+                if (isFocused) onSelect(i)
+            }
+            Box(
+                modifier = Modifier
+                    .width(if (selected) 60.dp else 20.dp)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(if (selected) TvColors.Accent else TvColors.BgElevated)
+                    .then(
+                        if (isFocused) {
+                            Modifier.border(2.dp, Color.White, RoundedCornerShape(3.dp))
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .focusable(interactionSource = interactionSource),
+            )
+        }
+    }
+}
+
+/** 首页 Hero 轮换间隔：每个展示时长。 */
+private const val HERO_ROTATE_INTERVAL_MS = 7_000L
+
+/** Hero 轮换切换动画时长（淡入/淡出），与 AnimatedContent transitionSpec 对齐。 */
+private const val HERO_TRANSITION_ANIM_MS = 400L
 
 /** 客户端 type_name → 分类（与后端 vodlist.classify_type 保持一致）。 */
 private fun classifyType(typeName: String?): String {
