@@ -17,7 +17,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, detail, home, hotrank, iqiyi, proxy, search, sync, tencent, userdata, vodlist, youku
+from . import auth, db, detail, home, hotrank, proxy, search, sync, userdata, vodlist
+from .iqiyi import iqiyi
+from .tencent import tencent
+from .youku import youku
 
 # 修复 Windows 上 Python mimetypes 把 .js 映射成 text/plain 的问题
 # （浏览器会拒绝执行 text/plain 的 <script>，导致前端 JS 全部不生效）
