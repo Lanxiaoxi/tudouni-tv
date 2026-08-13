@@ -103,6 +103,17 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_videos_title ON videos(title);
             CREATE INDEX IF NOT EXISTS idx_videos_type ON videos(type_name, timestamp);
             CREATE INDEX IF NOT EXISTS idx_videos_ts ON videos(timestamp);
+
+            CREATE TABLE IF NOT EXISTS hot_rank_items (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                platform   TEXT NOT NULL,
+                source     TEXT NOT NULL,
+                vod_id     TEXT NOT NULL,
+                item       TEXT NOT NULL,
+                last_seen  INTEGER NOT NULL,
+                UNIQUE(platform, source, vod_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_hotrank_platform ON hot_rank_items(platform, last_seen);
             """
         )
         conn.commit()
@@ -110,8 +121,7 @@ def init_db() -> None:
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "role" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
-            conn.commit()
-        # 存量库迁移：早期 videos 表没有 vod_time 列，补上（幂等）
+            conn.commit()        # 存量库迁移：早期 videos 表没有 vod_time 列，补上（幂等）
         vcols = [r["name"] for r in conn.execute("PRAGMA table_info(videos)").fetchall()]
         if "vod_time" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN vod_time INTEGER DEFAULT 0")
@@ -121,6 +131,10 @@ def init_db() -> None:
             if col not in vcols:
                 conn.execute(f"ALTER TABLE videos ADD COLUMN {col} TEXT")
                 conn.commit()
+        # 存量库迁移：热播兜底从「快照表 hot_rank_history」升级为「条目并集表 hot_rank_items」，
+        # 清理废弃旧表（幂等；新库无此表则跳过）
+        conn.execute("DROP TABLE IF EXISTS hot_rank_history")
+        conn.commit()
     finally:
         conn.close()
 
@@ -579,5 +593,66 @@ def search_videos_local(wd: str, source: list[str] | None = None, limit: int = 2
                 (like, limit),
             ).fetchall()
         return [_video_row(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ---------- 热播榜条目（hot_rank_items） ----------
+
+# 每平台保留的条目上限（条目级并集去重，防止无限增长）
+HOT_RANK_ITEMS_KEEP = 200
+
+
+def merge_hot_rank_items(platform: str, items: list[dict]) -> None:
+    """条目级并集：把本次刷新的条目 upsert 进该平台（按 (source, vod_id) 去重）。
+
+    语义：这次拉到 abc、下次拉到 bcd → 库里累积 abcd（重复条目更新时间戳）。
+    last_seen 记录条目最近一次出现的刷新时间；超出上限时裁剪最久未出现的条目。
+    """
+    if not items:
+        return
+    conn = get_conn()
+    now = int(time.time())
+    try:
+        for it in items:
+            source = str(it.get("source_code") or "")
+            vod_id = str(it.get("vod_id") or "")
+            if not (source and vod_id):
+                continue
+            conn.execute(
+                """
+                INSERT INTO hot_rank_items (platform, source, vod_id, item, last_seen)
+                VALUES (?,?,?,?,?)
+                ON CONFLICT(platform, source, vod_id) DO UPDATE SET
+                    item=excluded.item, last_seen=excluded.last_seen
+                """,
+                (platform, source, vod_id, json.dumps(it, ensure_ascii=False), now),
+            )
+        # 裁剪：只保留该平台最近 HOT_RANK_ITEMS_KEEP 条（按 last_seen 倒序）
+        conn.execute(
+            "DELETE FROM hot_rank_items WHERE platform = ? AND id NOT IN "
+            "(SELECT id FROM hot_rank_items WHERE platform = ? ORDER BY last_seen DESC, id DESC LIMIT ?)",
+            (platform, platform, HOT_RANK_ITEMS_KEEP),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_hot_rank_items(platform: str, limit: int = 100) -> list[dict]:
+    """取某平台累积的条目（按最近出现倒序，兜底数据源）。无记录返回空列表。"""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT item FROM hot_rank_items WHERE platform = ? ORDER BY last_seen DESC, id DESC LIMIT ?",
+            (platform, limit),
+        ).fetchall()
+        result = []
+        for r in rows:
+            try:
+                result.append(json.loads(r["item"]))
+            except (ValueError, TypeError):
+                continue
+        return result
     finally:
         conn.close()

@@ -54,9 +54,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.tudouni.tv.data.ApiClient
+import com.tudouni.tv.data.ApiResponse
 import com.tudouni.tv.data.ContentFilter
 import com.tudouni.tv.data.DetailResponse
 import com.tudouni.tv.data.HomePrefetch
+import com.tudouni.tv.data.ItemsData
 import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.data.errorMessage
@@ -69,8 +71,10 @@ import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.navigation.NavPage
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import retrofit2.Response
 
 /**
  * 首页（对应设计方案 §6.1）：Hero 横幅 + 多内容行（按 type_name 客户端分组）。
@@ -104,6 +108,10 @@ fun HomeScreen(
     var retryKey by remember { mutableStateOf(0) }
     // 爱奇艺热播榜（独立拉取，失败静默隐藏该行）
     var iqiyiItems by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    // 优酷热播榜（独立拉取，失败静默隐藏该行）
+    var youkuItems by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    // 腾讯热播榜（独立拉取，失败静默隐藏该行）
+    var tencentItems by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     // Hero「立即播放」需要先拉详情拿第一集地址
     var heroPlaying by remember { mutableStateOf(false) }
 
@@ -190,23 +198,28 @@ fun HomeScreen(
         }
     }
 
-    // 爱奇艺热播榜：独立拉取（与主列表解耦），失败静默——行隐藏不影响首页其他内容
-    LaunchedEffect(retryKey) {
-        try {
-            val resp = ApiClient.get().iqiyiHot()
-            if (resp.isSuccessful) {
-                val body = resp.body()
-                val data = body?.data
-                if (body != null && body.code == 0 && data != null) {
-                    var list = data.items
-                    if (contentFilterEnabled) {
-                        list = ContentFilter.filterItems(list)
-                    }
-                    iqiyiItems = list
-                }
+    // 热播榜拉取（爱奇艺/优酷/腾讯共用）：独立拉取 + 分级过滤，失败静默返回空列表
+    suspend fun loadHotItems(api: suspend () -> Response<ApiResponse<ItemsData>>): List<VideoItem> {
+        return try {
+            val resp = api()
+            val body = resp.body()
+            val data = body?.data
+            if (resp.isSuccessful && body != null && body.code == 0 && data != null) {
+                if (contentFilterEnabled) ContentFilter.filterItems(data.items) else data.items
+            } else {
+                emptyList()
             }
         } catch (e: Exception) {
-            // 静默：爱奇艺榜单失败不影响首页主内容
+            emptyList() // 静默：榜单失败不影响首页主内容
+        }
+    }
+
+    // 热播榜（爱奇艺/优酷/腾讯）：并行拉取，与主列表解耦，失败静默——行隐藏不影响首页其他内容
+    LaunchedEffect(retryKey) {
+        coroutineScope {
+            launch { iqiyiItems = loadHotItems { ApiClient.get().iqiyiHot() } }
+            launch { youkuItems = loadHotItems { ApiClient.get().youkuHot() } }
+            launch { tencentItems = loadHotItems { ApiClient.get().tencentHot() } }
         }
     }
 
@@ -375,6 +388,32 @@ fun HomeScreen(
                             ContentRow(
                                 title = "爱奇艺热播",
                                 items = iqiyiItems,
+                                onClickItem = onOpenDetail,
+                            )
+                        }
+                    }
+                }
+                // 优酷热播（独立数据源，空则整行隐藏）
+                if (youkuItems.isNotEmpty()) {
+                    item(key = "row_youku") {
+                        Column {
+                            Spacer(Modifier.height(28.dp))
+                            ContentRow(
+                                title = "优酷热播",
+                                items = youkuItems,
+                                onClickItem = onOpenDetail,
+                            )
+                        }
+                    }
+                }
+                // 腾讯热播（独立数据源，空则整行隐藏）
+                if (tencentItems.isNotEmpty()) {
+                    item(key = "row_tencent") {
+                        Column {
+                            Spacer(Modifier.height(28.dp))
+                            ContentRow(
+                                title = "腾讯热播",
+                                items = tencentItems,
                                 onClickItem = onOpenDetail,
                             )
                         }

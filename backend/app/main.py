@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, detail, home, iqiyi, proxy, search, sync, userdata, vodlist
+from . import auth, db, detail, home, hotrank, iqiyi, proxy, search, sync, tencent, userdata, vodlist, youku
 
 # 修复 Windows 上 Python mimetypes 把 .js 映射成 text/plain 的问题
 # （浏览器会拒绝执行 text/plain 的 <script>，导致前端 JS 全部不生效）
@@ -56,10 +56,16 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(_sync_loop())
     logger.info("资源镜像表同步任务已启动（间隔 %sh）", SYNC_INTERVAL_HOURS)
     iqiyi_task = asyncio.create_task(iqiyi.warmup_loop())
-    logger.info("爱奇艺热播预热任务已启动（间隔 30min）")
+    logger.info("爱奇艺热播预热任务已启动（间隔 5 天）")
+    youku_task = asyncio.create_task(youku.warmup_loop())
+    logger.info("优酷热播预热任务已启动（间隔 5 天）")
+    tencent_task = asyncio.create_task(tencent.warmup_loop())
+    logger.info("腾讯热播预热任务已启动（间隔 5 天）")
     yield
     task.cancel()
     iqiyi_task.cancel()
+    youku_task.cancel()
+    tencent_task.cancel()
 
 
 app = FastAPI(title="LibreTV API", version="0.1.0", lifespan=lifespan)
@@ -267,6 +273,20 @@ async def api_items(
 async def api_iqiyi_hot(_: None = Depends(auth.require_token)):
     """爱奇艺热播榜：榜单片名 → 资源站聚合搜索，返回可播放条目（缓存 30min 预取）。"""
     data = await iqiyi.get_hot()
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.get("/api/hotrank/youku")
+async def api_youku_hot(_: None = Depends(auth.require_token)):
+    """优酷热播榜：榜单页内嵌数据 → 资源站聚合搜索，返回可播放条目（缓存 30min 预取）。"""
+    data = await youku.get_hot()
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.get("/api/hotrank/tencent")
+async def api_tencent_hot(_: None = Depends(auth.require_token)):
+    """腾讯热播榜：频道接口 → 资源站聚合搜索，返回可播放条目（缓存 30min 预取）。"""
+    data = await tencent.get_hot()
     return {"code": 0, "data": data, "message": "ok"}
 
 
