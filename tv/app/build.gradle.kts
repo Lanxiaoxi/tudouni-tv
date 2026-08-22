@@ -13,8 +13,8 @@ android {
         // Android 8.0+，覆盖绝大多数国产盒子
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     signingConfigs {
