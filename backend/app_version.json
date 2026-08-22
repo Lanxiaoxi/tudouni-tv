@@ -1,7 +1,7 @@
 {
-  "latest_version": "0.2.0",
-  "latest_code": 2,
+  "latest_version": "0.3.0",
+  "latest_code": 3,
   "download_url": "/api/app/download",
-  "notes": "本次更新：……（发布前请修改为实际更新说明，会展示在 TV 端更新弹窗中）",
+  "notes": "分类页计数跟随所选类型（显示已加载数量）",
   "force": false
 }

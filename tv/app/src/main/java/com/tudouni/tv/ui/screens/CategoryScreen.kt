@@ -222,7 +222,13 @@ fun CategoryScreen(
             Spacer(Modifier.width(20.dp))
             if (!loadingFirst && displayItems.isNotEmpty()) {
                 Text(
-                    text = "共 $total 部",
+                    // 2026-08-22：计数跟随当前显示列表——「全部」显示分类总数；
+                    // 选中细分后显示该细分已加载的条目数（后端不提供按细分计数，本地只统计已加载分页）
+                    text = if (selectedSub == null) {
+                        "共 $total 部"
+                    } else {
+                        "${selectedSub} · 已加载 ${displayItems.size} 部"
+                    },
                     style = TvType.BodyMedium,
                     color = TvColors.TextTertiary,
                 )
