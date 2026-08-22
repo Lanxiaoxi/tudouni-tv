@@ -1,6 +1,7 @@
 # TudouniTV · Android TV 客户端
 
-基于现有 LibreTV 后端（FastAPI）的 **Android TV 原生客户端**，后端零改动。
+基于现有 LibreTV 后端（FastAPI）的 **Android TV 原生客户端**，后端除软件更新接口
+（`/api/app/version`、`/api/app/download`，见下文）外零改动。
 技术栈：Kotlin + Jetpack Compose + Media3 ExoPlayer + Retrofit。
 
 ## 环境要求
@@ -38,6 +39,46 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 或直接在 Android Studio 里 `Build > Build APK(s)` 后把 APK 拷到盒子安装。
 
+## 软件更新与发版流程
+
+TV 端内置「检查更新」（设置 → 关于，且启动时自动静默检查一次）：请求后端
+`/api/app/version` 拿到最新版本信息，用 `versionCode` 对比当前版本，有新版则弹窗
+提示用户下载安装（下载 APK → 调起系统安装器）。
+
+**发版步骤（每次出新版本）：**
+
+1. **升版本号**：`app/build.gradle.kts` → `versionCode` +1、`versionName` 更新。
+2. **构建**：Android Studio `Build > Build APK(s)`（或 `./gradlew assembleRelease`），
+   产物在 `app/build/outputs/apk/release/app-release.apk`。
+3. **上传 APK**：把 release APK 传到服务器 `backend/tudounitv.apk`
+   （仓库 `.gitignore` 的 `*.apk` 已忽略该文件，不提交 git）。
+4. **更新版本信息**：编辑服务器上 `backend/app_version.json`：
+
+   ```json
+   {
+     "latest_version": "0.2.0",
+     "latest_code": 2,
+     "download_url": "/api/app/download",
+     "notes": "本次更新内容…",
+     "force": false
+   }
+   ```
+
+   `latest_code` 必须大于客户端当前 `BuildConfig.VERSION_CODE` 才会提示更新；
+   `notes` 展示在更新弹窗中；`force` 为强制更新标记（字段已预留，客户端暂未处理）。
+5. **部署**：后端 `GET /api/app/version` 每次实时读 `app_version.json`，改文件即生效，
+   无需重启服务；客户端下次检查更新即可看到新版。
+
+**注意：**
+
+- **签名一致性**：升级 APK 必须与已装 APK **同签名**，否则系统安装器拒绝安装。
+  本项目 release 复用 debug keystore（`build.gradle.kts` 的 `signingConfig`），
+  务必保存好该 keystore，换机器/CI 别弄丢。
+- **首次安装权限**：Android 8+ 首次更新需在系统设置允许「安装未知应用」
+  （应用内会引导到该设置页）；授权后重新点「检查更新」即可走下载安装。
+- **本地测试**：把 `backend/app_version.json` 的 `latest_code` 临时调大（如 `999`）
+  即可触发更新提示，测完记得改回。
+
 ## 使用
 
 1. 打开 App，直接输入**用户名密码**登录（首次可点"注册"）；后端地址固定为
@@ -45,13 +86,15 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 2. 首页为横向焦点卡片流：遥控器左右移动、OK 进入详情。
 3. 详情页选择集数播放（ExoPlayer 原生播 HLS，直连资源站，无浏览器 CORS 限制）。
 
-## 对接的后端接口（全部保持后端不变）
+## 对接的后端接口
 
 | 接口 | 说明 |
 |---|---|
 | `POST /api/auth/login` / `register` | body `{username,password}` → `data.token`（Bearer 鉴权） |
 | `GET /api/items?offset=&limit=` | 首页列表，分批加载（默认 500/批），`total/has_more` 分页 |
 | `GET /api/detail?id=&source=` | 详情：`episodes[]`（m3u8 地址）+ `videoInfo` |
+| `GET /api/app/version` | 软件更新：最新版本信息（`latest_code` / `download_url` / `notes`，无需鉴权） |
+| `GET /api/app/download` | 软件更新：APK 安装包下载（无需鉴权） |
 
 注意：`/api/items` 成功码是 `code=0`，`/api/detail` 成功码是 `code=200`，客户端均已兼容。
 

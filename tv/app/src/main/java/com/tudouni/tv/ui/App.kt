@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -22,6 +23,7 @@ import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.ui.components.SplashScreen
 import com.tudouni.tv.ui.components.TvNavRail
+import com.tudouni.tv.ui.components.UpdateFlow
 import com.tudouni.tv.ui.navigation.NavPage
 import com.tudouni.tv.ui.screens.CategoryScreen
 import com.tudouni.tv.ui.screens.DetailScreen
@@ -74,6 +76,11 @@ fun App() {
     // 之后置 false，避免从详情/播放页返回时焦点被抢回导航栏
     var navInitialFocus by remember { mutableStateOf(true) }
 
+    // 软件更新（2026-08-22）：设置页手动触发计数 + 自动检查一次性标记
+    // （避免每次从详情/播放页返回主界面都重复自动检查）
+    var updateCheckTrigger by remember { mutableIntStateOf(0) }
+    var autoUpdateChecked by remember { mutableStateOf(false) }
+
     // 启动：读取已保存的登录态（token 与 username 并行读，减少 Loading 时长）
     LaunchedEffect(Unit) {
         if (screen is Screen.Loading) {
@@ -114,25 +121,34 @@ fun App() {
                 mainPageName = NavPage.HOME.name
                 screen = Screen.Main(NavPage.HOME)
             }
-            MainFrame(
-                page = s.page,
-                username = username,
-                navInitialFocus = navInitialFocus,
-                onNavFocusConsumed = { navInitialFocus = false },
-                onPageChange = { p ->
-                    mainPageName = p.name
-                    screen = Screen.Main(p)
-                },
-                onOpenDetail = { item -> screen = Screen.Detail(item) },
-                onPlay = { item, url, episodes, episodeIndex, resumeMs ->
-                    screen = Screen.Player(item, url, episodes, episodeIndex, resumeMs)
-                },
-                onLogout = {
-                    // 退出登录：清 token/用户名，回到登录页
-                    username = ""
-                    screen = Screen.Login
-                },
-            )
+            Box(Modifier.fillMaxSize()) {
+                MainFrame(
+                    page = s.page,
+                    username = username,
+                    navInitialFocus = navInitialFocus,
+                    onNavFocusConsumed = { navInitialFocus = false },
+                    onPageChange = { p ->
+                        mainPageName = p.name
+                        screen = Screen.Main(p)
+                    },
+                    onOpenDetail = { item -> screen = Screen.Detail(item) },
+                    onPlay = { item, url, episodes, episodeIndex, resumeMs ->
+                        screen = Screen.Player(item, url, episodes, episodeIndex, resumeMs)
+                    },
+                    onLogout = {
+                        // 退出登录：清 token/用户名，回到登录页
+                        username = ""
+                        screen = Screen.Login
+                    },
+                    onCheckUpdate = { updateCheckTrigger++ },
+                )
+                // 软件更新弹窗流程（覆盖主框架所有页面：自动检查 + 设置页手动触发）
+                UpdateFlow(
+                    autoCheck = !autoUpdateChecked,
+                    checkTrigger = updateCheckTrigger,
+                    onAutoCheckConsumed = { autoUpdateChecked = true },
+                )
+            }
         }
 
         is Screen.Detail -> DetailScreen(
@@ -172,6 +188,7 @@ private fun MainFrame(
     onOpenDetail: (VideoItem) -> Unit,
     onPlay: (VideoItem, String, List<String>, Int, Long) -> Unit,
     onLogout: () -> Unit,
+    onCheckUpdate: () -> Unit,
 ) {
     Row(Modifier.fillMaxSize()) {
         TvNavRail(
@@ -206,6 +223,7 @@ private fun MainFrame(
                     NavPage.SETTINGS -> SettingsScreen(
                         username = username,
                         onLogout = onLogout,
+                        onCheckUpdate = onCheckUpdate,
                     )
                 }
             }

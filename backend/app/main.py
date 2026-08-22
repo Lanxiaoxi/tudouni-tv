@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, detail, home, hotrank, proxy, search, sync, userdata, vodlist
+from . import auth, db, detail, home, hotrank, proxy, search, sync, update, userdata, vodlist
 from .iqiyi import iqiyi
 from .tencent import tencent
 from .youku import youku
@@ -113,6 +113,10 @@ async def unhandled_exc_handler(request: Request, exc: Exception):
 @app.get("/api/health")
 async def health():
     return {"code": 0, "data": {"status": "ok"}, "message": "ok"}
+
+
+# 软件更新（无需鉴权：版本检查 + APK 下载）
+app.include_router(update.router)
 
 
 @app.post("/api/auth/register")

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 软件更新：下载的 APK 存 cacheDir/update/，通过 FileProvider 共享给系统安装器 -->
+    <cache-path
+        name="update_apk"
+        path="update/" />
+</paths>

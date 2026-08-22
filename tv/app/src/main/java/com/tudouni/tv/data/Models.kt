@@ -170,6 +170,17 @@ data class SearchHistoryItem(
     val timestamp: Long?
 )
 
+// ---------- 软件更新（/api/app/version，无需鉴权） ----------
+
+/** GET /api/app/version → data（download_url 为相对路径，客户端按 serverAddr 拼接） */
+data class AppVersionData(
+    @SerializedName("latest_version") val latestVersion: String,
+    @SerializedName("latest_code") val latestCode: Int,
+    @SerializedName("download_url") val downloadUrl: String,
+    val notes: String?,
+    val force: Boolean
+)
+
 // ---------- 账号（/api/me） ----------
 
 data class MeData(

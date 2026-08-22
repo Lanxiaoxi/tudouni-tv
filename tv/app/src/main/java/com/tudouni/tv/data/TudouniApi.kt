@@ -92,6 +92,11 @@ interface TudouniApi {
     @DELETE("/api/search-history")
     suspend fun clearSearchHistory(): Response<ApiResponse<Map<String, Any>>>
 
+    // ---------- 软件更新（无需鉴权） ----------
+
+    @GET("/api/app/version")
+    suspend fun appVersion(): Response<ApiResponse<AppVersionData>>
+
     // ---------- 账号 ----------
 
     @GET("/api/me")

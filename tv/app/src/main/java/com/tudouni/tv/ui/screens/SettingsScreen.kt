@@ -33,6 +33,7 @@ import com.tudouni.tv.data.AuthStore
 import com.tudouni.tv.data.ContentFilter
 import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.ui.components.TvButton
+import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.components.TvDialog
 import com.tudouni.tv.ui.components.PageHorizontalPadding
 import com.tudouni.tv.ui.theme.TvColors
@@ -48,6 +49,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     username: String,
     onLogout: () -> Unit,
+    onCheckUpdate: () -> Unit,
 ) {
     val context = LocalContext.current
     val authStore = remember { AuthStore(context) }
@@ -177,6 +179,12 @@ fun SettingsScreen(
         // 分组：说明
         SettingsGroup(title = "关于") {
             SettingsRow(label = "版本", value = BuildConfig.VERSION_NAME)
+            Spacer(Modifier.height(16.dp))
+            TvButton(
+                text = "检查更新",
+                style = TvButtonStyle.Secondary,
+                onClick = onCheckUpdate,
+            )
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "播放进度保存在服务端，换设备登录同一账号即可继续观看。分级过滤默认启用，可在设置中关闭。",
