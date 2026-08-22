@@ -22,6 +22,7 @@ import androidx.compose.ui.window.Dialog
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvShapes
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.delay
 
 /**
  * TV 确认弹窗（对应设计方案 §5.9）：
@@ -40,9 +41,17 @@ fun TvDialog(
     onDismiss: () -> Unit,
 ) {
     val confirmFocus = remember { FocusRequester() }
-    // M2：弹窗打开后把焦点给确认主按钮
+    // M2：弹窗打开后把焦点给确认主按钮。
+    // 2026-08-22 修复：Dialog 内容挂载（独立窗口）晚于协程执行时，requestFocus 会抛
+    // IllegalStateException（FocusRequester is not initialized），慢设备（真机）上闪退；
+    // 改为重试直到成功。
     LaunchedEffect(Unit) {
-        confirmFocus.requestFocus()
+        var attempts = 0
+        while (attempts < FOCUS_RETRY_ATTEMPTS) {
+            if (runCatching { confirmFocus.requestFocus() }.isSuccess) break
+            delay(FOCUS_RETRY_MS)
+            attempts++
+        }
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -83,3 +92,9 @@ fun TvDialog(
         }
     }
 }
+
+/** 焦点请求重试间隔（毫秒）。 */
+private const val FOCUS_RETRY_MS = 50L
+
+/** 焦点请求重试次数上限（50ms × 20 ≈ 1s；正常情况首次即成功，仅慢设备兜底）。 */
+private const val FOCUS_RETRY_ATTEMPTS = 20

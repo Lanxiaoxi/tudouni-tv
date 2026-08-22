@@ -52,6 +52,7 @@ import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.components.TvDialog
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -91,9 +92,19 @@ fun HistoryScreen(
     LaunchedEffect(retryKey) { load() }
 
     // 初始焦点：加载完成后给第一条记录，否则整页方向键不工作
+    // 2026-08-22 修复：requestFocus 在目标节点未挂载时会抛 IllegalStateException
+    // （FocusRequester is not initialized）——慢设备（真机）上 LazyColumn 条目组合
+    // 晚于协程执行，裸调会闪退（模拟器快所以不复现）。改为重试直到成功。
     val firstRowFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(loading, items.isEmpty()) {
-        if (!loading && items.isNotEmpty()) firstRowFocus.requestFocus()
+        if (!loading && items.isNotEmpty()) {
+            var attempts = 0
+            while (attempts < FOCUS_RETRY_ATTEMPTS) {
+                if (runCatching { firstRowFocus.requestFocus() }.isSuccess) break
+                delay(FOCUS_RETRY_MS)
+                attempts++
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -281,97 +292,108 @@ private fun HistoryRow(
     val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = PageHorizontalPadding)
-            .padding(vertical = 10.dp)
-            .graphicsLayer {
-                scaleX = if (isFocused) 1.03f else 1f
-                scaleY = if (isFocused) 1.03f else 1f
-            }
-            .then(
-                if (isFocused) {
-                    Modifier.border(2.dp, TvColors.Accent, shape)
-                } else {
-                    Modifier.border(1.dp, TvColors.Line, shape)
-                }
-            )
-            .clip(shape)
-            .background(TvColors.BgSurface)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onOpen,
-            )
-            .padding(16.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 小海报 96dp（U4：占位/失败态用底色）
-        Box(
-            modifier = Modifier
-                .width(96.dp)
-                .height(144.dp)
-                .clip(RoundedCornerShape(12.dp)),
+        // 左：海报 + 信息 + 进度条（行级可聚焦单元：UP/DOWN 切换记录、OK 打开详情、RIGHT 进入右侧按钮）
+        //
+        // 2026-08-22 修复：原来整行 clickable 会屏蔽子节点焦点——Compose 2D 焦点搜索把
+        // canFocus 节点当叶子处理（TwoDimensionalFocusSearch），不会下探到其子树，
+        // 右侧「继续观看/删除」永远无法聚焦。改为按钮与信息区平级（独立可聚焦单元）。
+        Row(
+            modifier = modifier
+                .weight(1f)
+                .graphicsLayer {
+                    scaleX = if (isFocused) 1.03f else 1f
+                    scaleY = if (isFocused) 1.03f else 1f
+                }
+                .then(
+                    if (isFocused) {
+                        Modifier.border(2.dp, TvColors.Accent, shape)
+                    } else {
+                        Modifier.border(1.dp, TvColors.Line, shape)
+                    }
+                )
+                .clip(shape)
+                .background(TvColors.BgSurface)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onOpen,
+                )
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            AsyncImage(
-                model = resolveMediaUrl(item.pic),
-                contentDescription = item.title,
-                contentScale = ContentScale.Crop,
-                placeholder = ColorPainter(TvColors.BgElevated),
-                error = ColorPainter(TvColors.BgElevated),
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-        Spacer(Modifier.width(24.dp))
-
-        // 信息 + 进度条
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = item.title ?: "",
-                style = TvType.PosterTitle,
-                color = if (isFocused) TvColors.Accent else TvColors.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "第 ${(item.episodeIndex ?: 0) + 1} 集 · ${formatTime(positionMs)} / ${formatTime(durationMs)}",
-                style = TvType.Caption,
-                color = TvColors.TextTertiary,
-            )
-            Spacer(Modifier.height(14.dp))
-            // 进度条（6dp 高，accent 渐变填充）
+            // 小海报 96dp（U4：占位/失败态用底色）
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(TvColors.BgElevated),
+                    .width(96.dp)
+                    .height(144.dp)
+                    .clip(RoundedCornerShape(12.dp)),
             ) {
-                if (progress > 0) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(progress)
-                            .height(6.dp)
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(TvColors.Accent, TvColors.AccentStrong),
-                                )
-                            ),
-                    )
-                }
+                AsyncImage(
+                    model = resolveMediaUrl(item.pic),
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    placeholder = ColorPainter(TvColors.BgElevated),
+                    error = ColorPainter(TvColors.BgElevated),
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "已观看 ${(progress * 100).toInt()}%",
-                style = TvType.Caption,
-                color = TvColors.TextSecondary,
-            )
+            Spacer(Modifier.width(24.dp))
+
+            // 信息 + 进度条
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = item.title ?: "",
+                    style = TvType.PosterTitle,
+                    color = if (isFocused) TvColors.Accent else TvColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "第 ${(item.episodeIndex ?: 0) + 1} 集 · ${formatTime(positionMs)} / ${formatTime(durationMs)}",
+                    style = TvType.Caption,
+                    color = TvColors.TextTertiary,
+                )
+                Spacer(Modifier.height(14.dp))
+                // 进度条（6dp 高，accent 渐变填充）
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(TvColors.BgElevated),
+                ) {
+                    if (progress > 0) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(progress)
+                                .height(6.dp)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(TvColors.Accent, TvColors.AccentStrong),
+                                    )
+                                ),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "已观看 ${(progress * 100).toInt()}%",
+                    style = TvType.Caption,
+                    color = TvColors.TextSecondary,
+                )
+            }
         }
 
         Spacer(Modifier.width(24.dp))
 
-        // 操作：继续观看 / 删除（U10：无进度时文案改为「开始观看」）
+        // 右：操作按钮（独立可聚焦单元，与信息区平级；RIGHT 进入 / LEFT 返回信息区）
         Column(horizontalAlignment = Alignment.End) {
             TvButton(
                 text = if (positionMs > 0) "继续观看" else "开始观看",
@@ -388,3 +410,9 @@ private fun HistoryRow(
         }
     }
 }
+
+/** 焦点请求重试间隔（毫秒）。 */
+private const val FOCUS_RETRY_MS = 50L
+
+/** 焦点请求重试次数上限（50ms × 20 ≈ 1s；正常情况首次即成功，仅慢设备兜底）。 */
+private const val FOCUS_RETRY_ATTEMPTS = 20
