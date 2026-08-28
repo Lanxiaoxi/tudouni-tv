@@ -1,7 +1,7 @@
 {
-  "latest_version": "0.3.0",
-  "latest_code": 3,
+  "latest_version": "0.4.0",
+  "latest_code": 4,
   "download_url": "/api/app/download",
-  "notes": "分类页计数跟随所选类型（显示已加载数量）",
+  "notes": "修复历史记录页在部分设备上打开即闪退的问题；观看历史数据解析容错，异常数据不再影响整页展示",
   "force": false
 }

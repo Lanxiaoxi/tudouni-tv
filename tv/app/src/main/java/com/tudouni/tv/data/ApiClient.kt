@@ -1,5 +1,7 @@
 package com.tudouni.tv.data
 
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -25,6 +27,15 @@ object ApiClient {
 
     @Volatile
     var token: String? = null
+
+    /**
+     * 容错 Gson（2026-08-25 加固）：观看历史等共享表数据可能含旧版本/Web 端写入的
+     * 脏类型，HistoryItemDeserializer 宽松解析，防止单条脏数据导致整个列表反序列化失败。
+     * 其余模型保持 Gson 默认严格行为。
+     */
+    private val gson: Gson = GsonBuilder()
+        .registerTypeAdapter(HistoryItem::class.java, HistoryItemDeserializer())
+        .create()
 
     /** 更新 token 并使缓存的 Retrofit 实例失效（登录前传 null 清空，成功后传新 token）。 */
     fun configure(token: String?) {
@@ -60,7 +71,7 @@ object ApiClient {
             val retrofit = Retrofit.Builder()
                 .baseUrl("http://placeholder/")
                 .client(client)
-                .addConverterFactory(GsonConverterFactory.create())
+                .addConverterFactory(GsonConverterFactory.create(gson))
                 .build()
             return retrofit.create(TudouniApi::class.java).also { api = it }
         }

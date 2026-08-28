@@ -1,8 +1,13 @@
 package com.tudouni.tv.data
 
+import com.google.gson.JsonDeserializationContext
+import com.google.gson.JsonDeserializer
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import org.json.JSONObject
 import retrofit2.Response
+import java.lang.reflect.Type
 
 /**
  * 后端可能返回相对路径（封面本地化 /covers/xxx.jpg、上游 m3u8 一般是绝对 URL）。
@@ -125,9 +130,76 @@ data class HistoryBody(
 )
 
 data class HistoryData(
-    val items: List<HistoryItem>,
+    val items: List<HistoryItem>?,
     val total: Int
 )
+
+/**
+ * 观看历史行反序列化容错（2026-08-25 加固）。
+ *
+ * viewing_history 表被 Web 端与 TV 端多版本共同写入，线上存在脏数据类型：
+ * position/duration/episode_index/timestamp 可能是字符串、episodes 可能是字符串或对象、
+ * id 可能是字符串等。Gson 默认严格类型解析遇到不匹配会抛 JsonSyntaxException，
+ * 导致整个历史列表反序列化失败（历史页打不开/报网络错误）。本适配器全部宽松解析：
+ * - 数值字段：接受 数字 / 数字字符串 / null，解析失败按缺省；
+ * - episodes：只取 JSON 数组里的字符串（数字元素转字符串），非数组按空列表，null 保持 null；
+ * - 整行都不是对象（极端脏数据）：返回空行，避免整页崩。
+ */
+class HistoryItemDeserializer : JsonDeserializer<HistoryItem> {
+
+    override fun deserialize(
+        json: JsonElement,
+        typeOfT: Type,
+        context: JsonDeserializationContext,
+    ): HistoryItem {
+        if (!json.isJsonObject) {
+            return HistoryItem(null, null, null, null, null, null, null, null, null, null)
+        }
+        val o = json.asJsonObject
+        return HistoryItem(
+            id = o.doubleOf("id")?.toLong(),
+            vodId = o.stringOf("vod_id"),
+            source = o.stringOf("source"),
+            title = o.stringOf("title"),
+            pic = o.stringOf("pic"),
+            episodes = o.episodeListOf("episodes"),
+            episodeIndex = o.doubleOf("episode_index")?.toInt(),
+            position = o.doubleOf("position"),
+            duration = o.doubleOf("duration"),
+            timestamp = o.doubleOf("timestamp")?.toLong(),
+        )
+    }
+}
+
+/** 字符串字段：数字/布尔也会转成字符串（容错），null / 对象 / 数组返回 null。 */
+private fun JsonObject.stringOf(name: String): String? {
+    val el = get(name) ?: return null
+    return if (el.isJsonPrimitive) el.asString else null
+}
+
+/** 数值字段：接受 数字 或 数字字符串，其他类型 / 解析失败返回 null。 */
+private fun JsonObject.doubleOf(name: String): Double? {
+    val el = get(name) ?: return null
+    if (!el.isJsonPrimitive) return null
+    val p = el.asJsonPrimitive
+    return when {
+        p.isNumber -> p.asDouble
+        p.isString -> p.asString.trim().toDoubleOrNull()
+        else -> null
+    }
+}
+
+/** episodes 字段：只取 JSON 数组里的字符串 / 数字元素；null 返回 null，非数组（字符串/对象）按空列表。 */
+private fun JsonObject.episodeListOf(name: String): List<String>? {
+    val el = get(name) ?: return null
+    if (el.isJsonNull) return null
+    if (!el.isJsonArray) return emptyList()
+    val result = mutableListOf<String>()
+    for (e in el.asJsonArray) {
+        if (e.isJsonPrimitive) result.add(e.asString)
+    }
+    return result
+}
 
 /** viewing_history 行。episodes 为后端存回的 JSON 数组（m3u8 地址列表）。 */
 data class HistoryItem(

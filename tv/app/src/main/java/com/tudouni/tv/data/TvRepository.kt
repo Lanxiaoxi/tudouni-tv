@@ -71,7 +71,7 @@ object TvRepository {
         val resp = ApiClient.get().history(limit)
         if (resp.isSuccessful) {
             val body = resp.body()
-            if (body != null && body.code == 0 && body.data != null) body.data.items
+            if (body != null && body.code == 0 && body.data != null) body.data.items ?: emptyList()
             else throw IOException(body?.message ?: "获取历史失败（HTTP ${resp.code()}）")
         } else {
             throw IOException(resp.errorMessage())
