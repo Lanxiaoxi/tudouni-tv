@@ -10,7 +10,7 @@
 |---|---|
 | Android Studio | Ladybug（2024.2.1）或更新 |
 | Gradle JVM | **JDK 17–23**（Gradle 8.10.2 不支持 JDK 24/25） |
-| 设备 | Android TV 盒子 / 电视，**Android 8.0（API 26）及以上**（minSdk 26） |
+| 设备 | Android TV 盒子 / 电视，**Android 5.0（API 21）及以上**（minSdk 21） |
 | 后端 | 线上 `https://tv.lanxi.me`（客户端固定，改地址见 `ApiClient.DEFAULT_SERVER`） |
 
 > **本机已配置**：`gradle.properties` 中 `org.gradle.java.home` 指向
@@ -18,6 +18,29 @@
 > Android Studio 新版自带 JBR 为 **JDK 25**，与 Gradle 8.10.2 不兼容，工程内已强制使用 JDK 21，
 > 打开即 sync 通过。**换机器时**：删除该行，在
 > `Settings → Build Tools → Gradle → Gradle JVM` 选择 ≤23 的 JDK。
+
+## 兼容范围与适配
+
+| 范围 | 说明 |
+|---|---|
+| 最低系统 | **Android 5.0（API 21）**——覆盖国产老盒子（运营商定制/国产 5.1/7.1 大量在用） |
+| 签名方案 | **v1 (JAR) + v2 双签**。Android 7.0 以下与部分国产 ROM 安装器只认 v1，AGP 在 `minSdk >= 24` 时默认关 v1，需显式 `enableV1Signing = true` |
+| ABI | arm64-v8a / armeabi-v7a / x86 / x86_64。**不支持** MIPS / 纯 armeabi（AGP 8.x 已不支持这两类），此类盒子无解需换设备 |
+| 关键适配 | `AppUpdater.kt` 内置 `Build.VERSION.SDK_INT >= O` 版本分支：低版本跳 `Settings.ACTION_SECURITY_SETTINGS`（系统级"未知来源"开关），不用 8.0 才有的 `ACTION_MANAGE_UNKNOWN_APP_SOURCES` |
+
+调试盒子（adb 接入后）：
+
+```bash
+adb shell getprop ro.build.version.sdk        # 必须 ≥ 21
+adb shell getprop ro.product.cpu.abilist      # 必须含 armeabi-v7a 或 arm64-v8a
+adb install -r -t <apk>                        # 看真实错误码，盒子 UI 只显示「解析包错误」
+```
+
+**维护提示：**
+
+- **改 `minSdk` 后必须跑 `./gradlew lintRelease`**，不是 `lintVitalRelease`——前者会扫 `NewApi` 误调用。本项目 minSdk 26→21 时曾发现 `canRequestPackageInstalls` / `ACTION_MANAGE_UNKNOWN_APP_SOURCES` 需 API 26，已用 `Build.VERSION` 分支处理。
+- **Media3 大量 `@UnstableApi` API**。kotlin 的 `@OptIn` / `@file:OptIn` **只能过编译器、lint 的 `UnsafeOptInUsageError` 不认**，且 opt-in 要求会沿调用链向上传播（标注函数 → 调用方 → …），逐级标注会污染整个 UI 层签名。已通过 `build.gradle.kts` 的 `lint { warning += "UnsafeOptInUsageError" }` 降级（与 Google Media3 demo 同处理）。
+- **模拟器端到端验证**：`Television_4K` AVD（API 31）→ install → am start → screencap。**全部步骤必须放在同一条 Bash 命令内**，否则模拟器进程随 `run_in_background` 任务结束被回收，下次启动时 `adb` 会报 "no devices"。
 
 ## 打开方式
 
