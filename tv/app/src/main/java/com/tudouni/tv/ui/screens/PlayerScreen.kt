@@ -85,6 +85,10 @@ import kotlinx.coroutines.launch
  * 2026-08-22：全屏唤醒同时显示 Media3 自带控制条（播放/暂停、进度条、快进快退）——
  *   它有自己的 5s 自动隐藏且无法自行唤醒，唤醒应用按钮时一并 showController()
  */
+// PlayerScreen 内调用了 Media3 的 PlayerView.showController()（全屏唤醒控制条用），
+// 该 API 属 @UnstableApi，需显式标注。注意：kotlin 的 @OptIn / @file:OptIn 只能过编译器，
+// lint 的 UnsafeOptInUsageError 不认，必须用 Media3 自带的 @UnstableApi 注解。
+@androidx.media3.common.util.UnstableApi
 @Composable
 fun PlayerScreen(
     item: VideoItem,

@@ -3,6 +3,7 @@ package com.tudouni.tv.data
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
@@ -98,8 +99,17 @@ object AppUpdater {
         }
     }
 
-    /** 是否已授权"安装未知应用"（Android 8+；minSdk 26，无需版本判断）。 */
-    fun canInstall(context: Context): Boolean = context.packageManager.canRequestPackageInstalls()
+    /**
+     * 是否已授权"安装未知应用"。
+     * 该权限模型 Android 8.0(API 26) 才引入；7.1 及以下只有系统"未知来源"总开关，
+     * 无此 API 可查，一律视为可安装——真被系统拦截时会在调起安装器处被 try/catch 兜住。
+     */
+    fun canInstall(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.packageManager.canRequestPackageInstalls()
+        } else {
+            true
+        }
 
     /** 调起系统安装器；返回 false 表示失败（未授权/无安装器），由 UI 引导。 */
     fun install(context: Context, apk: File): Boolean {
@@ -118,13 +128,24 @@ object AppUpdater {
         }
     }
 
-    /** 引导用户去系统"允许安装未知应用"设置页（返回后需重新点「检查更新」重试）。 */
+    /**
+     * 引导用户去系统"允许安装未知应用"设置页（返回后需重新点「检查更新」重试）。
+     *
+     * Android 8.0+ 有按 App 粒度授权的设置页；7.1 及以下只有系统级"未知来源"总开关，
+     * 位于安全设置页（ACTION_SECURITY_SETTINGS，API 21 起可用）。
+     * 若低版本仍用 8.0 的 action，startActivity 会抛 ActivityNotFoundException 并被
+     * catch 吞掉——用户点了「去授权」却毫无反应，更新流程彻底卡死。
+     */
     fun openInstallPermissionSettings(context: Context) {
-        try {
-            val intent = Intent(
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:${context.packageName}"),
             )
+        } else {
+            Intent(Settings.ACTION_SECURITY_SETTINGS)
+        }
+        try {
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.w(TAG, "打开安装来源设置失败", e)

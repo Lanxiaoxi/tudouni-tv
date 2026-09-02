@@ -10,16 +10,22 @@ android {
 
     defaultConfig {
         applicationId = "com.tudouni.tv"
-        // Android 8.0+，覆盖绝大多数国产盒子
-        minSdk = 26
+        // Android 5.0+：向下兼容老电视盒子（运营商定制/国产盒子大量停留在 5.1/7.1）。
+        // 依赖最低要求：Compose BOM 2024.10.01 = 21、Media3 1.5.0 = 21、Coil 2.7.0 = 21、
+        // DataStore 1.1.1 = 19 —— 21 是安全下限，再降会编译失败。
+        minSdk = 21
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.4.1"
     }
 
     signingConfigs {
         getByName("debug") {
             // 复用 debug 签名给 release 用，免去创建 keystore
+            // v1 (JAR) 必须开：Android 7.0 以下只认 v1；部分国产 ROM 的安装器
+            // 即便在 8.0+ 上也只实现 v1 校验，缺 v1 会直接报「解析包错误」。
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
     buildTypes {
@@ -44,6 +50,14 @@ android {
         compose = true
         // SettingsScreen 展示版本号（BuildConfig.VERSION_NAME）
         buildConfig = true
+    }
+
+    lint {
+        // Media3 1.5 把大量常用 API（PlayerView.showController、ExoPlayer.Builder 等）
+        // 标为 @UnstableApi，且 opt-in 要求会沿调用链向上传播——逐个标注会把注解污染到整个
+        // UI 层签名。该检查仅表示 API 可能在小版本间变动，并非运行时崩溃风险，
+        // 故降为 warning：保留提示，但不阻断构建。
+        warning += "UnsafeOptInUsageError"
     }
 }
 
