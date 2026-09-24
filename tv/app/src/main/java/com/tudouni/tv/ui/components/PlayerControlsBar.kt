@@ -202,10 +202,18 @@ fun PlayerControlsBar(
         // ---- 按钮行 ----
         // 「向上」路由到进度条（形成 进度条 → 按钮行 → 顶栏 的三级纵向导航），
         // 显式指定而非依赖几何搜索——非全屏时几何搜索会偏向屏幕顶部的选集栏。
+        // FocusProperties.up 是非空 FocusRequester：两者都未传时保持 Default 行为
+        // （交还几何搜索），不能赋 null。
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .focusProperties { up = scrubFocus ?: upFocus },
+                .then(
+                    when {
+                        scrubFocus != null -> Modifier.focusProperties { up = scrubFocus }
+                        upFocus != null -> Modifier.focusProperties { up = upFocus }
+                        else -> Modifier
+                    }
+                ),
             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
