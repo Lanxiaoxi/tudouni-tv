@@ -15,8 +15,8 @@ android {
         // DataStore 1.1.1 = 19 —— 21 是安全下限，再降会编译失败。
         minSdk = 21
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.1"
+        versionCode = 6
+        versionName = "0.4.2"
     }
 
     signingConfigs {
