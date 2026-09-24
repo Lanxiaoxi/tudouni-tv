@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -56,6 +57,10 @@ const val SEEK_STEP_MS = 10_000L
  * ## 焦点
  * - 仅按钮行可聚焦；进度条不可聚焦（避免「能聚焦但按 OK 无反应」的死焦点）
  * - 左右移动由 Compose 几何搜索处理（同一行内，结果确定且符合直觉）
+ * - 上下方向由调用方显式指定：[upFocus] 是「向上」的落点。**必须显式指定**——
+ *   非全屏布局下右侧选集栏从屏幕顶部开始，按下键时几何搜索会优先选它
+ *   （Compose 加权距离 = 13×纵向距离² + 横向偏差²，纵向被放大 13 倍，
+ *   选集首行纵向仅差 50dp 就压倒了底部控制条的 334dp），导致焦点跑到选集而非控制条
  * - 控制条需要「不抢焦点」时，调用方直接不组合它（而非传入不可聚焦标志）——
  *   不组合才能同时保证视觉隐藏与焦点不可达
  *
@@ -66,7 +71,9 @@ const val SEEK_STEP_MS = 10_000L
  * @param onSeekBy 相对跳转（正数快进、负数快退），单位毫秒
  * @param onPrevEpisode 上一集；null 表示当前已是第一集（按钮不出现）
  * @param onNextEpisode 下一集；null 表示当前已是最后一集（按钮不出现）
- * @param playPauseFocus 外部指定焦点（进入控制条时落在播放/暂停上）
+ * @param playPauseFocus 播放/暂停按钮的焦点锚点。**始终传入**（非全屏也要传）：
+ *   顶部按钮的「向下」路由指向它，未挂载的 FocusRequester 无法作为路由目标
+ * @param upFocus 所有按钮「向上」的落点（通常指向顶部「返回」按钮）
  */
 @Composable
 fun PlayerControlsBar(
@@ -79,6 +86,7 @@ fun PlayerControlsBar(
     onPrevEpisode: (() -> Unit)? = null,
     onNextEpisode: (() -> Unit)? = null,
     playPauseFocus: FocusRequester? = null,
+    upFocus: FocusRequester? = null,
 ) {
     val hasDuration = durationMs > 0
     val progress = if (hasDuration) {
@@ -137,8 +145,19 @@ fun PlayerControlsBar(
         Spacer(Modifier.height(14.dp))
 
         // ---- 按钮行（唯一可聚焦区） ----
+        // 按钮行的「向上」统一路由到顶栏（upFocus）：
+        // 非全屏时右侧选集栏从屏幕顶部开始，几何搜索会优先选它而非底部控制条，
+        // 必须显式指定落点。左右仍走几何搜索（同一行内结果符合直觉）。
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (upFocus != null) {
+                        Modifier.focusProperties { up = upFocus }
+                    } else {
+                        Modifier
+                    }
+                ),
             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {

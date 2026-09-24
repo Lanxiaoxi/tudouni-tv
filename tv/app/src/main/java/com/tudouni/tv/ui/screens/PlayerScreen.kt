@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -221,6 +222,10 @@ fun PlayerScreen(
     var wakeConsumedKey by remember { mutableStateOf<Key?>(null) }
     // 控制条按钮的焦点锚点（进入控制条 / 唤醒后落在「播放暂停」上）
     val playPauseFocus = remember { FocusRequester() }
+    // 顶栏「返回」按钮的焦点锚点：控制条的「向上」路由指向它。
+    // 非全屏时必须显式路由——右侧选集栏从屏幕顶部开始，按下键时几何搜索会优先选它
+    // （加权距离 13×纵向²+横向²，纵向被放大 13 倍），焦点会跑到选集而非控制条。
+    val topBackFocus = remember { FocusRequester() }
     // 隐藏态焦点锚点：Compose 只在焦点路径上分发按键，若整棵树都没有焦点节点，
     // 按键收不到、控制条永远唤不醒。控制条隐藏时把焦点锚定到这个占位节点上，
     // 从而不再需要 2026-08-22 那套 OnKeyListener 视图层兜底。
@@ -423,7 +428,13 @@ fun PlayerScreen(
                         onClick = { if (isFullscreen) isFullscreen = false else onBack() },
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(16.dp),
+                            .padding(16.dp)
+                            .focusRequester(topBackFocus)
+                            // 「向下」显式路由到控制条「播放/暂停」：
+                            // 非全屏时几何搜索会优先选右侧选集栏（它从屏幕顶部开始，
+                            // 纵向距离远小于底部控制条），焦点会跑到选集去。
+                            // 这样顶部↔底部导航可控，与用户预期一致。
+                            .focusProperties { down = playPauseFocus },
                     )
                 }
                 // 全屏切换按钮：右上角
@@ -436,7 +447,8 @@ fun PlayerScreen(
                         onClick = { isFullscreen = !isFullscreen },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(16.dp),
+                            .padding(16.dp)
+                            .focusProperties { down = playPauseFocus },
                     )
                 }
                 // 自绘播放控制条：贴底（进度条 + 播放/暂停 + 快进退 + 上下集）。
@@ -459,7 +471,9 @@ fun PlayerScreen(
                         } else {
                             null
                         },
-                        playPauseFocus = if (isFullscreen) playPauseFocus else null,
+                        // 非全屏也必须传：顶栏「向下」路由指向它，未挂载的 requester 无法作路由目标
+                        playPauseFocus = playPauseFocus,
+                        upFocus = topBackFocus,
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 }
