@@ -38,9 +38,12 @@ import com.tudouni.tv.data.CategoryCache
 import com.tudouni.tv.data.ContentFilter
 import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.VideoItem
-import com.tudouni.tv.data.errorMessage
+import com.tudouni.tv.data.pageErrorMessage
+import com.tudouni.tv.data.userFacingError
+import com.tudouni.tv.ui.LocalRelogin
 import com.tudouni.tv.ui.components.EmptyState
 import com.tudouni.tv.ui.components.FullScreenLoading
+import com.tudouni.tv.ui.components.LoadFailedState
 import com.tudouni.tv.ui.components.PageHorizontalPadding
 import com.tudouni.tv.ui.components.PosterCard
 import com.tudouni.tv.ui.components.RowCardSpacing
@@ -141,10 +144,10 @@ fun CategoryScreen(
                     error = body?.message ?: "加载失败"
                 }
             } else {
-                error = resp.errorMessage()
+                error = resp.pageErrorMessage()
             }
         } catch (e: Exception) {
-            error = "网络错误: ${e.message}"
+            error = e.userFacingError()
         } finally {
             if (isFirst) loadingFirst = false else loadingMore = false
         }
@@ -262,11 +265,10 @@ fun CategoryScreen(
         when {
             loadingFirst && items.isEmpty() -> FullScreenLoading()
 
-            error != null && items.isEmpty() -> EmptyState(
-                title = "加载失败",
-                description = error,
-                actionText = "重试",
-                onAction = { retryKey++ },
+            error != null && items.isEmpty() -> LoadFailedState(
+                message = error,
+                onRetry = { retryKey++ },
+                onRelogin = LocalRelogin.current,
             )
 
             items.isEmpty() -> EmptyState(

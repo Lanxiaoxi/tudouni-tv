@@ -44,8 +44,11 @@ import com.tudouni.tv.data.HistoryItem
 import com.tudouni.tv.data.TvRepository
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.data.resolveMediaUrl
+import com.tudouni.tv.data.userFacingError
+import com.tudouni.tv.ui.LocalRelogin
 import com.tudouni.tv.ui.components.EmptyState
 import com.tudouni.tv.ui.components.FullScreenLoading
+import com.tudouni.tv.ui.components.LoadFailedState
 import com.tudouni.tv.ui.components.PageHorizontalPadding
 import com.tudouni.tv.ui.components.TvButton
 import com.tudouni.tv.ui.components.TvButtonStyle
@@ -83,7 +86,9 @@ fun HistoryScreen(
         try {
             items = TvRepository.fetchHistory(100)
         } catch (e: Exception) {
-            error = "网络错误: ${e.message}"
+            // 401 时 errorMessage 已归一化为「登录已过期，请重新登录」，
+            // 不再误标「网络错误」（App 顶层会弹重新登录提示）
+            error = e.userFacingError()
         } finally {
             loading = false
         }
@@ -145,11 +150,10 @@ fun HistoryScreen(
         when {
             loading && items.isEmpty() -> FullScreenLoading()
 
-            error != null && items.isEmpty() -> EmptyState(
-                title = "加载失败",
-                description = error,
-                actionText = "重试",
-                onAction = { retryKey++ },
+            error != null && items.isEmpty() -> LoadFailedState(
+                message = error,
+                onRetry = { retryKey++ },
+                onRelogin = LocalRelogin.current,
             )
 
             items.isEmpty() -> EmptyState(

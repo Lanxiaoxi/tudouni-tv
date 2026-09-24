@@ -121,6 +121,22 @@ TV 端内置「检查更新」（设置 → 关于，且启动时自动静默检
 
 注意：`/api/items` 成功码是 `code=0`，`/api/detail` 成功码是 `code=200`，客户端均已兼容。
 
+## 登录态失效（token 过期）处理
+
+后端 `require_token` 在 token 过期/被吊销时统一返回 `401 {"code":401,"message":"凭证无效或已过期"}`
+（有效期由后端 `TOKEN_TTL_DAYS` 控制，默认 7 天）。这类失败**重试无用**——用的是同一个失效
+token，因此客户端不引导「重试」，而是引导重新登录：
+
+| 环节 | 位置 | 行为 |
+|---|---|---|
+| 识别 | `ApiClient` 的 OkHttp 拦截器 | 响应 401 且本机持有 token → 广播 `ApiClient.authExpired`（未带 token 的 401 不广播，避免登录页密码错误时误跳） |
+| 文案归一 | `Models.pageErrorMessage()` | 业务接口 401 → 「登录已过期，请重新登录」，不带「网络错误」前缀（`userFacingError()` 同理）。**登录接口仍用 `errorMessage()`**，那里的 401 是密码错误 |
+| 全局提示 | `App.kt` | 主框架内弹出「登录已过期」+「重新登录 / 稍后」；从详情/播放页返回后也会补弹；每次登录会话只提示一次（否则「稍后」形同虚设） |
+| 页内出口 | `LoadFailedState` + `LocalRelogin` | 首页/分类/搜索/历史/详情的失败态在 401 时把「重试」换成「重新登录」按钮；`LocalRelogin` 由 `App` 提供，避免逐层传参 |
+
+「重新登录」与「稍后」的区别：前者清 token/用户名并跳登录页；后者只关提示、不强制登出
+（用户可能想先看完当前内容），但后续请求仍会 401。
+
 ## 架构
 
 ```
@@ -128,15 +144,16 @@ app/src/main/java/com/tudouni/tv/
 ├── MainActivity.kt       入口（Compose 宿主）
 ├── ui/
 │   ├── App.kt            屏幕状态机（Login/Home/Detail/Player，未引入 nav 库）
+│   ├── LocalRelogin.kt   「重新登录」动作的 CompositionLocal 通道（各页失败态共用）
 │   ├── LoginScreen.kt    登录/注册（后端地址固定）
 │   ├── HomeScreen.kt     首页列表（焦点卡片流 + 分页加载）
 │   ├── DetailScreen.kt   详情 + 选集
 │   ├── PlayerScreen.kt   ExoPlayer HLS 播放
 │   └── theme/Theme.kt    TV 深色主题
 └── data/
-    ├── ApiClient.kt      Retrofit 单例（固定后端地址 + 拦截器附加 Bearer token）
+    ├── ApiClient.kt      Retrofit 单例（固定后端地址 + 拦截器附加 Bearer token + 401 广播）
     ├── AuthStore.kt      DataStore 持久化（token/用户名）
-    ├── Models.kt         接口数据模型
+    ├── Models.kt         接口数据模型 + 401 文案归一化
     └── TudouniApi.kt     后端接口定义
 ```
 

@@ -61,11 +61,13 @@ import com.tudouni.tv.data.HomePrefetch
 import com.tudouni.tv.data.ItemsData
 import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.VideoItem
-import com.tudouni.tv.data.errorMessage
+import com.tudouni.tv.data.pageErrorMessage
 import com.tudouni.tv.data.resolveMediaUrl
+import com.tudouni.tv.data.userFacingError
+import com.tudouni.tv.ui.LocalRelogin
 import com.tudouni.tv.ui.components.ContentRow
-import com.tudouni.tv.ui.components.EmptyState
 import com.tudouni.tv.ui.components.FullScreenLoading
+import com.tudouni.tv.ui.components.LoadFailedState
 import com.tudouni.tv.ui.components.TvButton
 import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.navigation.NavPage
@@ -171,10 +173,10 @@ fun HomeScreen(
                         error = body?.message ?: "加载失败"
                     }
                 } else {
-                    error = resp.errorMessage()
+                    error = resp.pageErrorMessage()
                 }
             } catch (e: Exception) {
-                error = "网络错误: ${e.message}"
+                error = e.userFacingError()
             } finally {
                 loading = false
             }
@@ -266,11 +268,10 @@ fun HomeScreen(
         // 兜底：无预拉缓存且加载失败前（冷启动预拉未命中时）显示普通加载转圈
         loading && items.isEmpty() -> FullScreenLoading()
 
-        error != null && items.isEmpty() -> EmptyState(
-            title = "加载失败",
-            description = error,
-            actionText = "重试",
-            onAction = { retryKey++ },
+        error != null && items.isEmpty() -> LoadFailedState(
+            message = error,
+            onRetry = { retryKey++ },
+            onRelogin = LocalRelogin.current,
         )
 
         else -> {
@@ -524,7 +525,7 @@ private suspend fun prefetchHomeItems(
                     break
                 }
             } else {
-                android.util.Log.e("HomeScreen", "补齐失败: ${resp.errorMessage()}")
+                android.util.Log.e("HomeScreen", "补齐失败: ${resp.pageErrorMessage()}")
                 break
             }
         }

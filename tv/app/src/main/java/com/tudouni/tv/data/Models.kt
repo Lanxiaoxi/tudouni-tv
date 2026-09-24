@@ -20,9 +20,25 @@ fun resolveMediaUrl(path: String?): String? {
     else ApiClient.serverAddr.trimEnd('/') + "/" + path.trimStart('/')
 }
 
+// ---------- 登录态失效（401）识别 ----------
+
+/**
+ * 该响应是否表示登录态失效（token 过期 / 被吊销 / 本机未携带）。
+ *
+ * 用途：页面拿到 401 时不再展示「重试」——重试用的还是同一个失效 token，必然再失败。
+ * 提示改为引导重新登录；真正清凭证 + 跳登录页由 ApiClient.authExpired → App 顶层弹窗完成。
+ */
+fun <T> Response<T>.isAuthExpired(): Boolean = code() == 401
+
+/** 登录态失效时给用户的统一文案（与 App 顶层「登录已过期」弹窗口径一致）。 */
+const val AUTH_EXPIRED_MESSAGE = "登录已过期，请重新登录"
+
 /**
  * 后端用 HTTP 状态码表达业务错误（如 401/400/409），body 为 {code, message}。
  * Retrofit 默认对非 2xx 抛 HttpException，这里解析 errorBody 的 message 展示给用户。
+ *
+ * 注意保留后端原文：登录接口的 401 是「用户名或密码错误」，不能归一化成「登录已过期」
+ * （需要归一化的页面错误请用 [pageErrorMessage]）。
  */
 fun <T> Response<T>.errorMessage(): String {
     val body = errorBody()?.string()
@@ -34,6 +50,24 @@ fun <T> Response<T>.errorMessage(): String {
         "请求失败（HTTP ${code()}）"
     }
 }
+
+/**
+ * 页面级错误文案：401 归一化为 [AUTH_EXPIRED_MESSAGE]，其余沿用后端原文。
+ *
+ * 业务接口的 401 只可能来自 token 失效（后端 require_token 的两种情况），此时后端原文
+ * 「凭证无效或已过期」配上「重试」按钮会被理解成临时故障，实际重试必然再失败。
+ * 登录接口不要用这个（那里的 401 是密码错误，见 [errorMessage]）。
+ */
+fun <T> Response<T>.pageErrorMessage(): String =
+    if (isAuthExpired()) AUTH_EXPIRED_MESSAGE else errorMessage()
+
+/**
+ * 异常 → 页面展示文案。
+ * 登录态失效（[TvRepository] 抛出的 IOException）不再冠以「网络错误」——
+ * 它和网络无关，误导用户去检查网络。
+ */
+fun Throwable.userFacingError(): String =
+    if (message == AUTH_EXPIRED_MESSAGE) AUTH_EXPIRED_MESSAGE else "网络错误: $message"
 
 /**
  * 后端统一响应包装（/api/items、/api/auth 成功 code=0；

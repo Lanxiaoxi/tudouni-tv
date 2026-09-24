@@ -2,6 +2,9 @@ package com.tudouni.tv.data
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -29,6 +32,28 @@ object ApiClient {
     var token: String? = null
 
     /**
+     * 登录态失效广播（HTTP 401）：token 过期或被服务端吊销。
+     *
+     * 为什么放在拦截器而不是各页面：401 可能来自任意接口（首页 / 分类 / 搜索 / 历史 /
+     * 详情 / 换源 / 进度上报），逐页判断既遗漏又重复。这里统一识别一次，
+     * 由 App 顶层收集后清除本机凭证并跳登录页（各页面的「重试」按钮对失效 token 无效）。
+     *
+     * 用 SharedFlow(replay=0) 而不是 StateFlow：只广播「失效」这一个事件，
+     * 登录页停留期间不会有历史值被重放导致误跳；重复提示由 App 顶层的
+     * authExpiredPending / authExpiredConsumed 两个标记兜底（每次登录只提示一次）。
+     */
+    private val _authExpired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val authExpired: SharedFlow<Unit> = _authExpired.asSharedFlow()
+
+    /** 本机是否持有凭证（无凭证时 401 属于「未登录」，不该弹「登录已过期」）。 */
+    private fun hasToken(): Boolean = !token.isNullOrEmpty()
+
+    /** 收到 401 时广播登录态失效（fire-and-forget，非阻塞、不抛异常）。 */
+    private fun notifyAuthExpired() {
+        _authExpired.tryEmit(Unit)
+    }
+
+    /**
      * 容错 Gson（2026-08-25 加固）：观看历史等共享表数据可能含旧版本/Web 端写入的
      * 脏类型，HistoryItemDeserializer 宽松解析，防止单条脏数据导致整个列表反序列化失败。
      * 其余模型保持 Gson 默认严格行为。
@@ -50,7 +75,7 @@ object ApiClient {
             val rewrite = Interceptor { chain ->
                 val req = chain.request()
                 val base = serverAddr.toHttpUrlOrNull()
-                if (base != null) {
+                val response = if (base != null) {
                     val newUrl = req.url.newBuilder()
                         .scheme(base.scheme)
                         .host(base.host)
@@ -62,6 +87,10 @@ object ApiClient {
                 } else {
                     chain.proceed(req)
                 }
+                // 统一识别登录态失效（401）：带 token 时说明是过期/被吊销；未带 token
+                // （如 /api/auth/login 密码错误返 401）不广播，否则登录页会跳回自身。
+                if (response.code == 401 && hasToken()) notifyAuthExpired()
+                response
             }
             val client = OkHttpClient.Builder()
                 .addInterceptor(rewrite)

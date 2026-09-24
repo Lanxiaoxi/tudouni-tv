@@ -65,7 +65,8 @@ object TvRepository {
 
     /**
      * 拉取观看历史（最新在前）。
-     * @throws IOException 网络/服务端错误时抛出（由页面区分「空历史」与「加载失败」）
+     * @throws IOException 网络/服务端错误时抛出（由页面区分「空历史」与「加载失败」）；
+     *   401 抛 [AUTH_EXPIRED_MESSAGE]，页面据此不再引导「重试」
      */
     suspend fun fetchHistory(limit: Int = 100): List<HistoryItem> = withContext(Dispatchers.IO) {
         val resp = ApiClient.get().history(limit)
@@ -74,7 +75,7 @@ object TvRepository {
             if (body != null && body.code == 0 && body.data != null) body.data.items ?: emptyList()
             else throw IOException(body?.message ?: "获取历史失败（HTTP ${resp.code()}）")
         } else {
-            throw IOException(resp.errorMessage())
+            throw IOException(resp.pageErrorMessage())
         }
     }
 
@@ -123,7 +124,7 @@ object TvRepository {
             if (body != null && body.code == 0 && body.data != null) body.data.items
             else throw IOException(body?.message ?: "获取搜索历史失败（HTTP ${resp.code()}）")
         } else {
-            throw IOException(resp.errorMessage())
+            throw IOException(resp.pageErrorMessage())
         }
     }
 

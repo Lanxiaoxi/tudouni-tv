@@ -32,6 +32,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tudouni.tv.R
+import com.tudouni.tv.data.AUTH_EXPIRED_MESSAGE
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvShapes
 import com.tudouni.tv.ui.theme.TvType
@@ -115,6 +116,40 @@ fun SkeletonPoster(modifier: Modifier = Modifier) {
             .alpha(alpha)
             .background(TvColors.BgElevated, TvShapes.Card),
     )
+}
+
+/**
+ * 页面级失败态：401（登录已过期）时不再给「重试」按钮——重试用的还是同一个失效 token，
+ * 必然再失败。改为给「重新登录」主按钮（[onRelogin]），由调用方转向登录流程；
+ * 其他错误维持原标题 + 重试按钮。
+ *
+ * @param message 由 errorMessage() / userFacingError() 产出的文案；
+ *   等于 [AUTH_EXPIRED_MESSAGE] 即判定为登录态失效
+ * @param onRelogin 仅登录态失效时使用；为 null 时退化为纯文案提示（不出现无效按钮）
+ */
+@Composable
+fun LoadFailedState(
+    message: String?,
+    title: String = "加载失败",
+    retryText: String = "重试",
+    onRetry: () -> Unit,
+    onRelogin: (() -> Unit)? = null,
+) {
+    if (message == AUTH_EXPIRED_MESSAGE) {
+        EmptyState(
+            title = "登录已过期",
+            description = "登录凭证已失效，需要重新登录后才能继续使用",
+            actionText = if (onRelogin != null) "重新登录" else null,
+            onAction = onRelogin,
+        )
+    } else {
+        EmptyState(
+            title = title,
+            description = message,
+            actionText = retryText,
+            onAction = onRetry,
+        )
+    }
 }
 
 /** 空状态（对应 §5.11）：图标 + 标题 + 说明 + 必带可聚焦操作按钮。 */

@@ -37,16 +37,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.tudouni.tv.data.ApiClient
+import com.tudouni.tv.data.AUTH_EXPIRED_MESSAGE
 import com.tudouni.tv.data.DetailResponse
 import com.tudouni.tv.data.HistoryItem
 import com.tudouni.tv.data.SourceSwitcher
 import com.tudouni.tv.data.TvRepository
 import com.tudouni.tv.data.VideoItem
-import com.tudouni.tv.data.errorMessage
+import com.tudouni.tv.data.isAuthExpired
 import com.tudouni.tv.data.resolveMediaUrl
+import com.tudouni.tv.ui.LocalRelogin
 import com.tudouni.tv.ui.components.EpisodeGrid
-import com.tudouni.tv.ui.components.EmptyState
 import com.tudouni.tv.ui.components.FullScreenLoading
+import com.tudouni.tv.ui.components.LoadFailedState
 import com.tudouni.tv.ui.components.TvButton
 import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.components.TvChip
@@ -92,14 +94,20 @@ fun DetailScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // 加载详情 + 恢复进度（并行）+ 探测其他源（失败均不影响主体展示）
-    suspend fun loadDetailAndHistory(target: VideoItem) {
-        coroutineScope {
+    // @return (详情, 详情接口是否因登录态失效失败)；401 时调用方提示「登录已过期」，
+    //   而不是笼统的「获取详情失败」——重试对失效 token 无用
+    suspend fun loadDetailAndHistory(target: VideoItem): Pair<DetailResponse?, Boolean> {
+        return coroutineScope {
             val detailDeferred = async {
                 try {
                     val resp = ApiClient.get().detail(id = target.vodId ?: "", source = target.sourceCode)
-                    if (resp.isSuccessful) resp.body() else null
+                    if (resp.isSuccessful) {
+                        resp.body() to false
+                    } else {
+                        null to resp.isAuthExpired()
+                    }
                 } catch (_: Exception) {
-                    null
+                    null to false
                 }
             }
             val historyDeferred = async {
@@ -116,7 +124,7 @@ fun DetailScreen(
                     emptyList()
                 }
             }
-            val d = detailDeferred.await()
+            val (d, authExpired) = detailDeferred.await()
             val h = historyDeferred.await()
             val alts = altDeferred.await()
             detail = d
@@ -133,14 +141,15 @@ fun DetailScreen(
                 resumeMs = histPosMs
                 hasResume = true
             }
+            d to authExpired
         }
     }
 
     LaunchedEffect(item.vodId, item.sourceCode) {
         loading = true
         error = null
-        loadDetailAndHistory(currentItem)
-        if (detail == null) error = "获取详情失败"
+        val (d, authExpired) = loadDetailAndHistory(currentItem)
+        if (d == null) error = if (authExpired) AUTH_EXPIRED_MESSAGE else "获取详情失败"
         loading = false
     }
 
@@ -163,8 +172,10 @@ fun DetailScreen(
                 currentIndex = 0
                 resumeMs = 0L
                 hasResume = false
-                loadDetailAndHistory(alt)
-                if (detail == null) error = "该来源暂无内容"
+                val (altDetail, altAuthExpired) = loadDetailAndHistory(alt)
+                if (altDetail == null) {
+                    error = if (altAuthExpired) AUTH_EXPIRED_MESSAGE else "该来源暂无内容"
+                }
             } finally {
                 switchingSource = false
             }
@@ -175,11 +186,12 @@ fun DetailScreen(
         when {
             loading -> FullScreenLoading()
 
-            error != null -> EmptyState(
-                title = "加载失败",
-                description = error,
-                actionText = "返回",
-                onAction = onBack,
+            error != null -> LoadFailedState(
+                message = error,
+                // 详情页的「重试」是返回列表；登录态失效时同样给「返回」出口
+                retryText = "返回",
+                onRetry = onBack,
+                onRelogin = LocalRelogin.current,
             )
 
             else -> {

@@ -41,9 +41,12 @@ import com.tudouni.tv.data.SearchHistoryItem
 import com.tudouni.tv.data.SettingsPreference
 import com.tudouni.tv.data.TvRepository
 import com.tudouni.tv.data.VideoItem
-import com.tudouni.tv.data.errorMessage
+import com.tudouni.tv.data.pageErrorMessage
+import com.tudouni.tv.data.userFacingError
+import com.tudouni.tv.ui.LocalRelogin
 import com.tudouni.tv.ui.components.EmptyState
 import com.tudouni.tv.ui.components.FullScreenLoading
+import com.tudouni.tv.ui.components.LoadFailedState
 import com.tudouni.tv.ui.components.PageHorizontalPadding
 import com.tudouni.tv.ui.components.PosterCard
 import com.tudouni.tv.ui.components.RowCardSpacing
@@ -149,10 +152,10 @@ fun SearchScreen(
                     if (page == 1) searchError = body?.message ?: "搜索失败"
                 }
             } else {
-                if (page == 1) searchError = resp.errorMessage()
+                if (page == 1) searchError = resp.pageErrorMessage()
             }
         } catch (e: Exception) {
-            if (page == 1) searchError = "网络错误: ${e.message}"
+            if (page == 1) searchError = e.userFacingError()
         }
     }
 
@@ -344,11 +347,12 @@ fun SearchScreen(
                 when {
                     searching && resultItems.isEmpty() -> FullScreenLoading(text = "搜索「${submitted}」…")
 
-                    searchError != null && resultItems.isEmpty() -> EmptyState(
+                    searchError != null && resultItems.isEmpty() -> LoadFailedState(
+                        message = searchError,
                         title = "搜索失败",
-                        description = searchError,
-                        actionText = "返回重试",
-                        onAction = { submitted = null },
+                        retryText = "返回重试",
+                        onRetry = { submitted = null },
+                        onRelogin = LocalRelogin.current,
                     )
 
                     resultItems.isEmpty() -> EmptyState(
