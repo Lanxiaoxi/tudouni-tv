@@ -40,7 +40,7 @@ import com.tudouni.tv.ui.theme.TvShapes
 import com.tudouni.tv.ui.theme.TvType
 
 /** 快进/快退步长（毫秒）。 */
-const val SEEK_STEP_MS = 10_000L
+const val SEEK_STEP_MS = 15_000L
 
 /**
  * 自绘播放控制条（替代 Media3 自带控制条）。
@@ -55,10 +55,11 @@ const val SEEK_STEP_MS = 10_000L
  * ## 布局
  * 两行：
  * ```
- * ════════════════════════════════════════════  ← 进度条（可聚焦：左右键快退/快进）
- *   [⏮ 上一集?]  [▶/❚❚]  [⏪ 退10秒]  [⏩ 进10秒]  [⏭ 下一集?]
+ * ════════════════════════════════════════════  ← 进度条（可聚焦：左右键快退/快进 15s）
+ *   [⏮ 上一集?]  [⏪ 退15秒]  [▶/❚❚]  [⏩ 进15秒]  [⏭ 下一集?]
  * ```
- * 上下集并入按钮行，是为了让导航退化为一维：左右在行内移动，上下在「进条条 → 按钮行 → 顶栏」间移动。
+ * 上下集并入按钮行，是为了让导航退化为一维：左右在行内移动，上下在「进度条 → 按钮行 → 顶栏」间移动。
+ * 播放/暂停居中（两侧是退/进 15 秒），与常见遥控器「中间键是播放」的操作习惯一致。
  *
  * ## 焦点
  * - 进度条与按钮行都可聚焦。**进度条聚焦时左右键 = 快退/快进 10 秒**（事件被进度条
@@ -226,6 +227,12 @@ fun PlayerControlsBar(
             }
 
             ControlButton(
+                text = "⏪",
+                label = "退15秒",
+                onClick = { onSeekBy(-SEEK_STEP_MS) },
+            )
+
+            ControlButton(
                 text = if (isPlaying) "❚❚" else "▶",
                 label = if (isPlaying) "暂停" else "播放",
                 primary = true,
@@ -238,14 +245,8 @@ fun PlayerControlsBar(
             )
 
             ControlButton(
-                text = "⏪",
-                label = "退10秒",
-                onClick = { onSeekBy(-SEEK_STEP_MS) },
-            )
-
-            ControlButton(
                 text = "⏩",
-                label = "进10秒",
+                label = "进15秒",
                 onClick = { onSeekBy(SEEK_STEP_MS) },
             )
 
