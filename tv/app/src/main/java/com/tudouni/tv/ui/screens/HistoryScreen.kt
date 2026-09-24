@@ -168,7 +168,12 @@ fun HistoryScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 48.dp),
                 ) {
-                    groups.forEach { (label, groupItems) ->
+                    // L1 修复（2026-08-25）：key 必须全局唯一，否则 LazyColumn 首次测量直接抛
+                    // IllegalArgumentException（Key "hist_0" was already used）。
+                    // 原来用组内下标 key = "hist_$i"，而每个分组的 i 都从 0 重来——
+                    // 记录跨天（今天/昨天/更早 两个以上分组）时必然重复 → 点历史页即闪退。
+                    // 这也解释了「有时候」：记录都在同一天时只有一个分组，key 不重复，页面正常。
+                    groups.forEachIndexed { groupIndex, (label, groupItems) ->
                         item(key = "group_$label") {
                             Text(
                                 text = label,
@@ -179,7 +184,7 @@ fun HistoryScreen(
                                     .padding(top = 24.dp, bottom = 14.dp),
                             )
                         }
-                        itemsIndexed(groupItems, key = { i, _ -> "hist_$i" }) { i, h ->
+                        itemsIndexed(groupItems, key = { i, _ -> "hist_${groupIndex}_$i" }) { i, h ->
                             HistoryRow(
                                 item = h,
                                 onOpen = { onOpenDetail(h.toVideoItem()) },
@@ -197,7 +202,14 @@ fun HistoryScreen(
                                     }
                                 },
                                 onDelete = { deleteTarget = h },
-                                modifier = if (i == 0) Modifier.focusRequester(firstRowFocus) else Modifier,
+                                // 焦点只给「全列表第一条」：原来判 i == 0 在每个分组里都成立，
+                                // 同一个 FocusRequester 被绑到多个节点，requestFocus() 行为未定义
+                                // （可能抛 IllegalStateException 或焦点乱跳）
+                                modifier = if (groupIndex == 0 && i == 0) {
+                                    Modifier.focusRequester(firstRowFocus)
+                                } else {
+                                    Modifier
+                                },
                             )
                         }
                     }
