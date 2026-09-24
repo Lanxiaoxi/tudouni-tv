@@ -17,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
@@ -38,12 +40,18 @@ import com.tudouni.tv.ui.theme.TvType
  * - 封面占满，底部渐变遮罩，左上角标（更新/高清），左下评分 ★ 8.5
  * - 焦点态中央浮现播放浮层（对应 Web .poster .play-hint）
  * - 下方：片名（2 行截断 28sp）+ 副信息（来源/年份 24sp）
+ *
+ * 实际渲染尺寸：宽 118dp、海报高 177dp（2:3），含片名与副信息后整卡约 245dp。
+ *
+ * @param focusRequester 需要外部指定初始焦点时传入（如搜索出结果后把焦点交给首项）。
+ *   焦点挂在海报主体（可点击单元）上，与 D-pad 焦点搜索的落点一致
  */
 @Composable
 fun PosterCard(
     item: VideoItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
 ) {
     Column(modifier = modifier.width(118.dp)) {
         FocusableSurface(
@@ -52,7 +60,10 @@ fun PosterCard(
             scale = 1.08f,
             modifier = Modifier
                 .width(118.dp)
-                .aspectRatio(2f / 3f),
+                .aspectRatio(2f / 3f)
+                .then(
+                    if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
+                ),
         ) { focused ->
             Box(Modifier.fillMaxSize()) {
                 // U4：占位/失败态用底色，避免加载中与加载失败显示空白

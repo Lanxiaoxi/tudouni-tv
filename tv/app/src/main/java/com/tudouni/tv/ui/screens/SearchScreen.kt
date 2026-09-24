@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,11 +52,13 @@ import com.tudouni.tv.ui.components.PageHorizontalPadding
 import com.tudouni.tv.ui.components.PosterCard
 import com.tudouni.tv.ui.components.RowCardSpacing
 import com.tudouni.tv.ui.components.TvButton
+import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.components.TvChip
 import com.tudouni.tv.ui.components.TvTextKeyboard
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvShapes
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -94,6 +97,18 @@ fun SearchScreen(
     var hotLoading by remember { mutableStateOf(true) }
     var historyItems by remember { mutableStateOf<List<SearchHistoryItem>>(emptyList()) }
     var contentFilterEnabled by remember { mutableStateOf(settingsPreference.isContentFilterEnabled()) }
+
+    // 键盘展开/收起：搜索出结果后收起键盘，把垂直空间让给结果网格。
+    // 1080p 电视上键盘约占 272dp，加上标题/输入框/间距后顶部固定区达 446dp，
+    // 留给结果区不足 100dp——连一张海报（177dp）都装不下，焦点下移到海报时
+    // 系统判定「已部分可见」不再滚动，表现为只能看到海报上半部分。
+    // 同一根因也影响未搜索时的「热门推荐」网格，故这里做成可手动切换。
+    var keyboardExpanded by remember { mutableStateOf(true) }
+    // 结果网格首项的焦点（收起键盘后焦点会随键盘一起消失，需移交给结果首项）
+    val firstResultFocus = remember { FocusRequester() }
+    // 焦点移交的一次性标记：每次搜索复位，避免「展开/收起键盘」这类操作
+    // 重新触发 effect 把焦点从用户当前位置拽回首项
+    var resultFocusHandedOff by remember { mutableStateOf(false) }
 
     // 进入页面：并行拉热门推荐 + 最近搜索（搜索历史失败不阻塞页面）
     LaunchedEffect(Unit) {
@@ -164,6 +179,10 @@ fun SearchScreen(
         if (q.isEmpty()) return
         submitted = q
         keyword = q
+        // 提交即收起键盘：结果区需要完整高度才装得下一张海报（见 keyboardExpanded 说明）
+        keyboardExpanded = false
+        // 新一轮搜索：允许再次移交焦点
+        resultFocusHandedOff = false
         val seq = ++searchSeq
         scope.launch {
             searching = true
@@ -208,6 +227,26 @@ fun SearchScreen(
         }.collect { (last, count) ->
             if (hasMore && !loadingMore && !searching && count > 0 && last >= count - 6) {
                 loadMore()
+            }
+        }
+    }
+
+    // 结果就绪（且键盘已收起）→ 把焦点交给结果首项：
+    // 收起键盘会连同其上的焦点节点一起移除，不移交则焦点丢失、方向键整页失效。
+    // 与 HistoryScreen 同样的重试写法：requestFocus 在目标未挂载时抛
+    // IllegalStateException（慢设备上 LazyVerticalGrid 组合晚于协程执行）。
+    // 用 resultFocusHandedOff 保证每次搜索只移交一次——否则用户手动收起键盘时
+    // 会被重新拽回首项。
+    LaunchedEffect(submitted, resultItems.isNotEmpty(), keyboardExpanded) {
+        if (submitted != null && resultItems.isNotEmpty() && !keyboardExpanded && !resultFocusHandedOff) {
+            var attempts = 0
+            while (attempts < FOCUS_RETRY_ATTEMPTS) {
+                if (runCatching { firstResultFocus.requestFocus() }.isSuccess) {
+                    resultFocusHandedOff = true
+                    break
+                }
+                delay(FOCUS_RETRY_MS)
+                attempts++
             }
         }
     }
@@ -270,18 +309,35 @@ fun SearchScreen(
                 enabled = keyword.isNotEmpty(),
                 fontSize = 18.sp,
             )
+            // 键盘显隐切换：收起后键盘占的 272dp 全部让给内容网格（否则一屏装不下
+            // 一张海报）；需要改关键词时再展开。两种状态都保留入口，避免键盘收起后
+            // 无处可点。
+            Spacer(Modifier.width(14.dp))
+            TvButton(
+                text = if (keyboardExpanded) "收起键盘" else "展开键盘",
+                style = TvButtonStyle.Secondary,
+                onClick = { keyboardExpanded = !keyboardExpanded },
+                fontSize = 18.sp,
+            )
         }
         Spacer(Modifier.height(14.dp))
 
-        // H1：自研 TV 键盘（初始焦点在键盘第一个键，保证方向键可用）
-        TvTextKeyboard(
-            value = keyword,
-            onValueChange = { keyword = it },
-            onSubmit = { doSearch(keyword) },
-            initialFocus = true,
-            modifier = Modifier.padding(horizontal = PageHorizontalPadding),
-        )
-        Spacer(Modifier.height(18.dp))
+        // H1：自研 TV 键盘（初始焦点在键盘第一个键，保证方向键可用）。
+        // 结果页收起键盘，把高度让给结果网格（否则结果区不足 100dp，装不下一张海报）。
+        // 折叠用「不组合」而非 height(0)：隐藏的按键若仍在组合中会继续参与焦点搜索，
+        // 方向键会落到看不见的按钮上。
+        if (keyboardExpanded) {
+            TvTextKeyboard(
+                value = keyword,
+                onValueChange = { keyword = it },
+                onSubmit = { doSearch(keyword) },
+                initialFocus = true,
+                modifier = Modifier.padding(horizontal = PageHorizontalPadding),
+            )
+            Spacer(Modifier.height(18.dp))
+        } else {
+            Spacer(Modifier.height(4.dp))
+        }
 
         Box(Modifier.fillMaxSize()) {
             if (submitted == null) {
@@ -351,7 +407,10 @@ fun SearchScreen(
                         message = searchError,
                         title = "搜索失败",
                         retryText = "返回重试",
-                        onRetry = { submitted = null },
+                        onRetry = {
+                            submitted = null
+                            keyboardExpanded = true
+                        },
                         onRelogin = LocalRelogin.current,
                     )
 
@@ -359,7 +418,10 @@ fun SearchScreen(
                         title = "未找到「${submitted}」",
                         description = "换个关键词试试，或看看热门推荐",
                         actionText = "返回热门推荐",
-                        onAction = { submitted = null },
+                        onAction = {
+                            submitted = null
+                            keyboardExpanded = true
+                        },
                     )
 
                     else -> LazyVerticalGrid(
@@ -382,8 +444,12 @@ fun SearchScreen(
                                 modifier = Modifier.padding(vertical = 4.dp),
                             )
                         }
-                        itemsIndexed(resultItems, key = { i, _ -> "r_$i" }) { _, item ->
-                            PosterCard(item = item, onClick = { onOpenDetail(item) })
+                        itemsIndexed(resultItems, key = { i, _ -> "r_$i" }) { i, item ->
+                            PosterCard(
+                                item = item,
+                                onClick = { onOpenDetail(item) },
+                                focusRequester = if (i == 0) firstResultFocus else null,
+                            )
                         }
                         item(key = "result_footer", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                             Box(
@@ -412,3 +478,9 @@ fun SearchScreen(
         }
     }
 }
+
+/** 焦点请求重试间隔（毫秒）。 */
+private const val FOCUS_RETRY_MS = 50L
+
+/** 焦点请求重试次数上限（50ms × 20 ≈ 1s；正常情况首次即成功，仅慢设备兜底）。 */
+private const val FOCUS_RETRY_ATTEMPTS = 20
