@@ -36,6 +36,9 @@ tv/local.properties
 tv/.idea/
 *.apk
 
+# AI 编码代理的会话日志/产物（运行时生成，不进仓库）
+.tudouni/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
