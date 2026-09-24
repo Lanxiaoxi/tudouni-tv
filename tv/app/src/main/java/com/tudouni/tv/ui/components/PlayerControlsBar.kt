@@ -3,6 +3,7 @@ package com.tudouni.tv.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +27,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,31 +54,34 @@ const val SEEK_STEP_MS = 10_000L
  * ## 布局
  * 两行：
  * ```
- * ────────────────────────────────────────────  ← 进度条 + 时间（纯展示，不可聚焦）
+ * ════════════════════════════════════════════  ← 进度条（可聚焦：左右键快退/快进）
  *   [⏮ 上一集?]  [▶/❚❚]  [⏪ 退10秒]  [⏩ 进10秒]  [⏭ 下一集?]
  * ```
- * 上下集并入按钮行，是为了让导航退化为一维：左右在行内移动，上下在「按钮行 ↔ 顶栏」间移动。
+ * 上下集并入按钮行，是为了让导航退化为一维：左右在行内移动，上下在「进条条 → 按钮行 → 顶栏」间移动。
  *
  * ## 焦点
- * - 仅按钮行可聚焦；进度条不可聚焦（避免「能聚焦但按 OK 无反应」的死焦点）
- * - 左右移动由 Compose 几何搜索处理（同一行内，结果确定且符合直觉）
- * - 上下方向由调用方显式指定：[upFocus] 是「向上」的落点。**必须显式指定**——
- *   非全屏布局下右侧选集栏从屏幕顶部开始，按下键时几何搜索会优先选它
- *   （Compose 加权距离 = 13×纵向距离² + 横向偏差²，纵向被放大 13 倍，
- *   选集首行纵向仅差 50dp 就压倒了底部控制条的 334dp），导致焦点跑到选集而非控制条
+ * - 进度条与按钮行都可聚焦。**进度条聚焦时左右键 = 快退/快进 10 秒**（事件被进度条
+ *   消费，不会跳出；系统对按住不放的按键自动连发，长按即连续快扫）——这是 TV 播放器
+ *   的标准交互（Media3 自带 TimeBar 在 TV 上同为此语义）；聚焦时进度条加粗并显示
+ *   原色描边以表明当前处于「可扫动」状态
+ * - 进度条「向下」固定路由到按钮行「播放/暂停」；按钮行「向上」回进度条——
+ *   两侧各自的纵向落点都是显式指定的（非全屏时几何搜索会偏向屏幕顶部的选集栏，
+ *   见上一版本修复说明）
+ * - 左右移动在按钮行内由几何搜索处理（同一行内，结果确定）
+ * - [scrubFocus] 建议传入：调用方可把外部焦点（顶栏/唤醒）直接投到进度条上
  * - 控制条需要「不抢焦点」时，调用方直接不组合它（而非传入不可聚焦标志）——
  *   不组合才能同时保证视觉隐藏与焦点不可达
  *
  * @param isPlaying 是否播放中（决定图标与标签）
  * @param positionMs 当前播放位置
- * @param durationMs 总时长（未知传 0：进度条按 0 显示、时长显示 --:--）
+ * @param durationMs 总时长（未知传 0：进度条禁用聚焦、时长显示 --:--）
  * @param onTogglePlayPause 播放/暂停
  * @param onSeekBy 相对跳转（正数快进、负数快退），单位毫秒
  * @param onPrevEpisode 上一集；null 表示当前已是第一集（按钮不出现）
  * @param onNextEpisode 下一集；null 表示当前已是最后一集（按钮不出现）
  * @param playPauseFocus 播放/暂停按钮的焦点锚点。**始终传入**（非全屏也要传）：
- *   顶部按钮的「向下」路由指向它，未挂载的 FocusRequester 无法作为路由目标
- * @param upFocus 所有按钮「向上」的落点（通常指向顶部「返回」按钮）
+ *   外部路由（顶栏「向下」、进度条「向下」）指向它，未挂载的 requester 无法作为路由目标
+ * @param upFocus 顶栏落点：进度条/按钮行「向上」回到顶栏（通常指向顶部「返回」按钮）
  */
 @Composable
 fun PlayerControlsBar(
@@ -87,6 +95,7 @@ fun PlayerControlsBar(
     onNextEpisode: (() -> Unit)? = null,
     playPauseFocus: FocusRequester? = null,
     upFocus: FocusRequester? = null,
+    scrubFocus: FocusRequester? = null,
 ) {
     val hasDuration = durationMs > 0
     val progress = if (hasDuration) {
@@ -94,6 +103,9 @@ fun PlayerControlsBar(
     } else {
         0f
     }
+    // 进度条（扫动条）的焦点交互源：焦点态决定条的粗细与描边
+    val scrubInteractionSource = remember { MutableInteractionSource() }
+    val scrubFocused by scrubInteractionSource.collectIsFocusedAsState()
 
     Column(
         modifier = modifier
@@ -105,24 +117,66 @@ fun PlayerControlsBar(
             )
             .padding(horizontal = 40.dp, vertical = 16.dp),
     ) {
-        // ---- 进度条 + 时间（纯展示，不可聚焦） ----
+        // ---- 进度条（可聚焦的 seek bar：左右键快退/快进） ----
+        // 不可聚焦的纯展示条已升级为「扫动条」：聚焦时加粗 + 琥珀描边，
+        // 左右键经 onKeyEvent 消费（不跳出控制条），长按靠系统连发实现连续快扫。
+        // 时长未知（HLS 边下边播常见）时禁用聚焦——扫动无参照，避免死焦点。
+        val seekEnabled = hasDuration
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(8.dp)
-                .background(TvColors.BgElevated, RoundedCornerShape(4.dp)),
+                .height(if (scrubFocused) 14.dp else 8.dp)
+                .then(
+                    if (scrubFocus != null) {
+                        Modifier.focusRequester(scrubFocus)
+                    } else {
+                        Modifier
+                    }
+                )
+                .focusable(
+                    enabled = seekEnabled,
+                    interactionSource = scrubInteractionSource,
+                )
+                // 聚焦态左右键 = 快退/快进，消费以避免焦点跳出进度条
+                .onKeyEvent { event ->
+                    if (!seekEnabled || event.type != KeyEventType.KeyDown) {
+                        false
+                    } else {
+                        when (event.key) {
+                            Key.DirectionLeft -> {
+                                onSeekBy(-SEEK_STEP_MS)
+                                true
+                            }
+
+                            Key.DirectionRight -> {
+                                onSeekBy(SEEK_STEP_MS)
+                                true
+                            }
+
+                            else -> false
+                        }
+                    }
+                }
+                // 聚焦态琥珀描边：表明当前处于「可扫动」状态
+                .then(
+                    if (scrubFocused) {
+                        Modifier.border(2.dp, TvColors.Accent, RoundedCornerShape(7.dp))
+                    } else {
+                        Modifier
+                    }
+                ),
             contentAlignment = Alignment.CenterStart,
         ) {
             if (progress > 0f) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(progress)
-                        .height(8.dp)
+                        .height(if (scrubFocused) 14.dp else 8.dp)
                         .background(
                             Brush.horizontalGradient(
                                 listOf(TvColors.Accent, TvColors.AccentStrong),
                             ),
-                            RoundedCornerShape(4.dp),
+                            RoundedCornerShape(if (scrubFocused) 7.dp else 4.dp),
                         ),
                 )
             }
@@ -144,20 +198,13 @@ fun PlayerControlsBar(
 
         Spacer(Modifier.height(14.dp))
 
-        // ---- 按钮行（唯一可聚焦区） ----
-        // 按钮行的「向上」统一路由到顶栏（upFocus）：
-        // 非全屏时右侧选集栏从屏幕顶部开始，几何搜索会优先选它而非底部控制条，
-        // 必须显式指定落点。左右仍走几何搜索（同一行内结果符合直觉）。
+        // ---- 按钮行 ----
+        // 「向上」路由到进度条（形成 进度条 → 按钮行 → 顶栏 的三级纵向导航），
+        // 显式指定而非依赖几何搜索——非全屏时几何搜索会偏向屏幕顶部的选集栏。
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(
-                    if (upFocus != null) {
-                        Modifier.focusProperties { up = upFocus }
-                    } else {
-                        Modifier
-                    }
-                ),
+                .focusProperties { up = scrubFocus ?: upFocus },
             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {

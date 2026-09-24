@@ -226,6 +226,8 @@ fun PlayerScreen(
     // 非全屏时必须显式路由——右侧选集栏从屏幕顶部开始，按下键时几何搜索会优先选它
     // （加权距离 13×纵向²+横向²，纵向被放大 13 倍），焦点会跑到选集而非控制条。
     val topBackFocus = remember { FocusRequester() }
+    // 进度条（扫动条）焦点锚点：进度条聚焦时左右键直接扫动快进/快退
+    val scrubFocus = remember { FocusRequester() }
     // 隐藏态焦点锚点：Compose 只在焦点路径上分发按键，若整棵树都没有焦点节点，
     // 按键收不到、控制条永远唤不醒。控制条隐藏时把焦点锚定到这个占位节点上，
     // 从而不再需要 2026-08-22 那套 OnKeyListener 视图层兜底。
@@ -258,13 +260,14 @@ fun PlayerScreen(
     }
 
     // 焦点锚定（与可见性变化绑定，避免「隐藏后锚点尚未组合」的竞态）：
-    // 可见 → 焦点落在播放/暂停；隐藏 → 焦点落在占位锚点（保证按键仍能沿焦点路径到达）。
+    // 可见 → 焦点落在进度条（唤醒后用户第一意图通常是看/拖进度）；
+    // 隐藏 → 焦点落在占位锚点（保证按键仍能沿焦点路径到达）。
     // 出错时不动焦点：此时展示错误浮层，焦点应归浮层按钮（由 errorRetryFocus 请求），
     // 锚点若在此抢焦点会让用户无法操作浮层。
     LaunchedEffect(isFullscreen, controlsVisible, playerError) {
         if (isFullscreen && playerError == null) {
             if (controlsVisible) {
-                requestFocusWithRetry(playPauseFocus)
+                requestFocusWithRetry(scrubFocus)
             } else {
                 requestFocusWithRetry(hiddenAnchorFocus)
             }
@@ -430,11 +433,10 @@ fun PlayerScreen(
                             .align(Alignment.TopStart)
                             .padding(16.dp)
                             .focusRequester(topBackFocus)
-                            // 「向下」显式路由到控制条「播放/暂停」：
+                            // 「向下」显式路由到进度条（二级是按钮行「播放/暂停」）：
                             // 非全屏时几何搜索会优先选右侧选集栏（它从屏幕顶部开始，
                             // 纵向距离远小于底部控制条），焦点会跑到选集去。
-                            // 这样顶部↔底部导航可控，与用户预期一致。
-                            .focusProperties { down = playPauseFocus },
+                            .focusProperties { down = scrubFocus },
                     )
                 }
                 // 全屏切换按钮：右上角
@@ -448,7 +450,7 @@ fun PlayerScreen(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(16.dp)
-                            .focusProperties { down = playPauseFocus },
+                            .focusProperties { down = scrubFocus },
                     )
                 }
                 // 自绘播放控制条：贴底（进度条 + 播放/暂停 + 快进退 + 上下集）。
@@ -471,9 +473,10 @@ fun PlayerScreen(
                         } else {
                             null
                         },
-                        // 非全屏也必须传：顶栏「向下」路由指向它，未挂载的 requester 无法作路由目标
+                        // 非全屏也必须传：顶栏/进度条的纵向路由指向它们
                         playPauseFocus = playPauseFocus,
                         upFocus = topBackFocus,
+                        scrubFocus = scrubFocus,
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 }
