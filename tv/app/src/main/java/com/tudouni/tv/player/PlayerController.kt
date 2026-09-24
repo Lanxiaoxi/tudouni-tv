@@ -78,6 +78,24 @@ class PlayerController(context: Context) {
     /** 播放中换集（从 0 开始）。 */
     fun playEpisode(url: String) = play(url, 0L)
 
+    /**
+     * 播放/暂停切换（自绘控制条用）。
+     * Media3 的 play()/pause() 本质是设置 playWhenReady；播放结束后按播放会从头重播。
+     */
+    fun togglePlayPause() {
+        if (player.isPlaying) player.pause() else player.play()
+    }
+
+    /**
+     * 相对当前位置跳转（自绘快进/快退按钮用）：deltaMs 正数快进、负数快退。
+     * 夹在 [0, duration] 内；时长未知时只保证不早于 0。
+     */
+    fun seekBy(deltaMs: Long) {
+        val target = (currentPositionMs() + deltaMs).coerceAtLeast(0L)
+        val dur = durationMs()
+        player.seekTo(if (dur > 0) target.coerceAtMost(dur) else target)
+    }
+
     fun seekTo(positionMs: Long) {
         if (positionMs > 0) player.seekTo(positionMs)
     }

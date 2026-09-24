@@ -137,36 +137,72 @@ token，因此客户端不引导「重试」，而是引导重新登录：
 「重新登录」与「稍后」的区别：前者清 token/用户名并跳登录页；后者只关提示、不强制登出
 （用户可能想先看完当前内容），但后续请求仍会 401。
 
+## 播放页焦点架构（2026-08-25 重构）
+
+**问题**：此前播放页同时存在两套焦点系统——Media3 `PlayerView` 自带控制条（播放/暂停、
+进度条、快进快退）在**原生 View 焦点系统**里，而返回/全屏/上下集按钮在 **Compose 焦点系统**里。
+两者之间转移焦点时，Compose 只能通过 `FocusFinder` 按屏幕矩形几何关系猜最近邻，
+方向键落点不可控（焦点在「返回」按右键会跳到几何上最近的「退出全屏」，按下键跳到「上一集」）。
+
+**方案**：`useController = false` 关闭原生控制条，改用自绘 `PlayerControlsBar`（Compose），
+全页只剩一套焦点。控制条布局：
+
+```
+────────────────────────────────────────  ← 进度条 + 时间（纯展示，不可聚焦）
+  [⏮ 上一集?]  [▶/❚❚]  [⏪ 退10秒]  [⏩ 进10秒]  [⏭ 下一集?]
+```
+
+上下集并入按钮行，使导航退化为一维：左右在行内移动，上下在「按钮行 ↔ 顶栏」间移动。
+进度条**不可聚焦**（纯展示），快进/快退由两侧按钮承担——避免出现「能聚焦但按 OK 无反应」的死焦点。
+
+**随之删除的三处历史补丁**（都是为弥合两套焦点而加的）：
+
+| 补丁 | 原用途 | 替代方案 |
+|---|---|---|
+| `OnKeyListener` 视图层兜底 | 焦点丢失时按键到不了预览 handler | 隐藏态焦点锚点 `hiddenAnchorFocus`（1dp 可聚焦占位节点） |
+| 唤醒键 KeyUp 配对吞键 | 跨系统焦点抢占导致 KeyUp 误触按钮 | 仍需吞唤醒键的 KeyUp（控制条在 KeyDown 时组合出来，KeyUp 会被 clickable 当点击） |
+| `showController()` 联动唤醒 | 原生控制条有自己的 5s 隐藏且无法自醒 | 原生控制条已不存在 |
+
+同时去掉了「隐藏按钮用 `alpha(0f)` 但仍在组合中」的做法——隐藏时直接**不组合**，
+否则隐藏的按钮仍参与焦点搜索，方向键可能落到看不见的按钮上。
+
 ## 架构
 
 ```
 app/src/main/java/com/tudouni/tv/
 ├── MainActivity.kt       入口（Compose 宿主）
+├── player/
+│   └── PlayerController.kt  ExoPlayer 封装（播放/暂停/seek/错误与缓冲状态）
 ├── ui/
-│   ├── App.kt            屏幕状态机（Login/Home/Detail/Player，未引入 nav 库）
+│   ├── App.kt            屏幕状态机（Login/Main/Detail/Player，未引入 nav 库）
 │   ├── LocalRelogin.kt   「重新登录」动作的 CompositionLocal 通道（各页失败态共用）
-│   ├── LoginScreen.kt    登录/注册（后端地址固定）
-│   ├── HomeScreen.kt     首页列表（焦点卡片流 + 分页加载）
-│   ├── DetailScreen.kt   详情 + 选集
-│   ├── PlayerScreen.kt   ExoPlayer HLS 播放
-│   └── theme/Theme.kt    TV 深色主题
+│   ├── navigation/       NavPage 顶层导航枚举
+│   ├── components/       通用组件（PosterCard / TvButton / TvChip / EpisodeGrid /
+│   │                     TvNavRail / TvKeyboard / TvDialog / PlayerControlsBar /
+│   │                     FocusableSurface / ContentRow / States / UpdateFlow）
+│   ├── screens/          Login / Home / Category / Detail / Player / History / Search / Settings
+│   └── theme/            TV 深色主题（Color / Shape / Type / Theme）
 └── data/
     ├── ApiClient.kt      Retrofit 单例（固定后端地址 + 拦截器附加 Bearer token + 401 广播）
+    ├── TudouniApi.kt     后端接口定义
+    ├── Models.kt         接口数据模型 + 401 文案归一化 + 历史脏数据容错解析
+    ├── TvRepository.kt   进度记忆/历史/搜索历史的读写封装
     ├── AuthStore.kt      DataStore 持久化（token/用户名）
-    ├── Models.kt         接口数据模型 + 401 文案归一化
-    └── TudouniApi.kt     后端接口定义
+    ├── SettingsPreference.kt  SharedPreferences（分级过滤/自动连播开关）
+    ├── HomePrefetch.kt / CategoryCache.kt   列表内存缓存（TTL 100 分钟）
+    ├── ContentFilter.kt  内容分级过滤（16 个关键词，与 Web 端一致）
+    ├── SourceSwitcher.kt 换源（与后端 sites.py 源列表对齐）
+    ├── AppUpdater.kt     软件更新（检查/下载/调起安装器）
+    └── VideoWordBank.kt  拼音搜索词库
 ```
 
-## 后续扩展点（骨架已留位）
+## 后续扩展点
 
-- **搜索**：`GET /api/search?wd=`（Retrofit 接口已备，需加搜索页）
-- **分类**：`GET /api/vodlist?cat=`（按类型浏览）
-- **播放进度记忆**：`PUT /api/history`（现 `videoProgress` 仅存于网页端 localStorage）
 - **遥控器优化**：弱盒性能（ExoPlayer `trackSelectionParameters` 降清晰度）
-- 当前播放器返回键直接回首页（详情跳转链路为骨架简化），后续可引入 nav 栈
+- 播放页返回键直接回主界面（详情跳转链路为简化实现），后续可引入 nav 栈
+- **强制更新**：后端 `app_version.json` 的 `force` 字段已预留，客户端尚未处理
 
-## 已知限制（骨架阶段）
+## 已知限制
 
-- 无分类/搜索/历史页面（接口已通，页面待加）
 - 封面来自后端 `/api/items` 的 `vod_pic`（含 `/covers/` 本地封面路径，Coil 直接加载）
 - 明文流量已在 Manifest 全局开启（`usesCleartextTraffic`），生产可收敛为 `networkSecurityConfig` 白名单

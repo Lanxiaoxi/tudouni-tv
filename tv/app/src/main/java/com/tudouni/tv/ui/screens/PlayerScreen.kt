@@ -3,11 +3,10 @@ package com.tudouni.tv.ui.screens
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.view.KeyEvent
-import android.view.View
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,7 +34,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -42,7 +42,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,6 +54,7 @@ import com.tudouni.tv.data.TvRepository
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.player.PlayerController
 import com.tudouni.tv.ui.components.EpisodeGrid
+import com.tudouni.tv.ui.components.PlayerControlsBar
 import com.tudouni.tv.ui.components.TvButton
 import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.theme.TvColors
@@ -66,7 +66,7 @@ import kotlinx.coroutines.launch
 
 /**
  * 播放页（对应设计方案 §6.5）：
- * - 左 70%：Media3 播放器（16:9，PlayerView 自带控制条）
+ * - 左 70%：Media3 播放器（**原生控制条已关闭**，播放控件见下）
  * - 右 30%：片名 + 选集网格（当前集 accent 高亮，0-9 跳集，焦点移动即切集）
  * - 进度记忆（跨设备断点续播）：
  *   ① 恢复：进入时 seekTo(resumePositionMs)（详情页已判定是否值得恢复）
@@ -75,19 +75,19 @@ import kotlinx.coroutines.launch
  * H2 修复：监听播放器错误/缓冲状态 → 错误浮层（重试/换源/返回）+ 缓冲中加载指示
  * M1 修复：换集立即上报（force=true，即使时长未知也更新集数）
  * L5 修复：播放页保持屏幕常亮
- * 2026-08-13：全屏时返回/全屏按钮自动隐藏（3s 无操作），方向键/OK 唤醒
- * 2026-08-22：全屏底部新增「上一集/下一集」按钮（左下/右下对称，复用 switchEpisode 切集，
- *   保持单集播放架构；第一集/最后一集自动隐藏；与返回/全屏按钮同受控制条自动隐藏影响）
- * 2026-08-22：全屏唤醒修复——控制条隐藏时按 OK/方向键只唤醒、不误触按钮（唤醒键的 KeyUp
- *   配对吞掉；否则 Compose clickable 在 KeyUp 触发点击，会执行隐藏前焦点所在的按钮）
- * 2026-08-22：全屏唤不醒修复——隐藏时重新锚定焦点到「退出全屏」按钮 + 视图层 OnKeyListener
- *   兜底（预览 handler 依赖焦点路径，焦点丢失时按键到不了它，控制条会永远唤不醒）
- * 2026-08-22：全屏唤醒同时显示 Media3 自带控制条（播放/暂停、进度条、快进快退）——
- *   它有自己的 5s 自动隐藏且无法自行唤醒，唤醒应用按钮时一并 showController()
+ *
+ * 2026-08-25 焦点架构统一（本次重构）：此前 Media3 自带控制条（原生 View 焦点系统）
+ * 与本页 Compose 按钮（Compose 焦点系统）并存，跨系统转移只能按屏幕矩形猜最近邻，
+ * 方向键落点不可控（焦点在「返回」按右键会跳到「退出全屏」、按下键跳到「上一集」）。
+ * 现改为 `useController = false` 关闭原生控制条 + 自绘 [PlayerControlsBar]，
+ * 全页只剩一套 Compose 焦点。随之删除了此前为弥合两套焦点而加的三处补丁：
+ *   - OnKeyListener 视图层兜底（改为隐藏态焦点锚点，见 hiddenAnchorFocus）
+ *   - 唤醒键 KeyUp 配对吞键（不再有跨系统焦点抢占，无需配对）
+ *   - showController() 联动唤醒（原生控制条已不存在）
  */
-// PlayerScreen 内调用了 Media3 的 PlayerView.showController()（全屏唤醒控制条用），
-// 该 API 属 @UnstableApi，需显式标注。注意：kotlin 的 @OptIn / @file:OptIn 只能过编译器，
-// lint 的 UnsafeOptInUsageError 不认，必须用 Media3 自带的 @UnstableApi 注解。
+// PlayerScreen 内使用 Media3 的 PlayerView（部分 API 属 @UnstableApi，需显式标注）。
+// 注意：kotlin 的 @OptIn / @file:OptIn 只能过编译器，lint 的 UnsafeOptInUsageError 不认，
+// 必须用 Media3 自带的 @UnstableApi 注解。
 @androidx.media3.common.util.UnstableApi
 @Composable
 fun PlayerScreen(
@@ -119,6 +119,8 @@ fun PlayerScreen(
     // H2：播放错误 / 缓冲状态
     val playerError by controller.error.collectAsState()
     val buffering by controller.isBuffering.collectAsState()
+    // 播放/暂停态（自绘控制条图标用）
+    val isPlaying by controller.isPlaying.collectAsState()
 
     // 自动连播设置
     val settingsPreference = remember { SettingsPreference(context) }
@@ -209,70 +211,73 @@ fun PlayerScreen(
 
     // 全屏：隐藏右侧选集栏 + 底部标题区，播放器占满整个页面
     var isFullscreen by remember { mutableStateOf(false) }
-    // 全屏时顶部控制条（返回/全屏按钮）可见性：初始显示，3s 无操作自动隐藏，方向键/OK 唤醒
+    // 全屏控制条可见性：初始显示，3s 无操作自动隐藏，任意按键唤醒
     var controlsVisible by remember { mutableStateOf(true) }
-    // 唤醒/交互计数：每次按键 +1，触发计时器重启（重新计算 3s）
+    // 交互计数：每次按键 +1，触发计时器重启（重新计算 3s）
     var controlTick by remember { mutableIntStateOf(0) }
-    // 唤醒时记住被消费的按键，成对的 KeyUp 一并吞掉（2026-08-22：Compose clickable 在
-    // KeyUp 触发点击，若只消费 KeyDown，KeyUp 会命中隐藏前焦点所在的按钮造成误执行）
+    // 唤醒时记住被消费的按键，成对的 KeyUp 一并吞掉。
+    // 必要性：控制条隐藏时按 OK/Enter 唤醒 → 控制条组合出来且焦点落到「播放/暂停」，
+    // 紧接着的 KeyUp 会被 Compose clickable 当作点击，导致刚唤醒就误触发播放/暂停。
     var wakeConsumedKey by remember { mutableStateOf<Key?>(null) }
-    val fullscreenButtonFocus = remember { FocusRequester() }
+    // 控制条按钮的焦点锚点（进入控制条 / 唤醒后落在「播放暂停」上）
+    val playPauseFocus = remember { FocusRequester() }
+    // 隐藏态焦点锚点：Compose 只在焦点路径上分发按键，若整棵树都没有焦点节点，
+    // 按键收不到、控制条永远唤不醒。控制条隐藏时把焦点锚定到这个占位节点上，
+    // 从而不再需要 2026-08-22 那套 OnKeyListener 视图层兜底。
+    val hiddenAnchorFocus = remember { FocusRequester() }
 
-    LaunchedEffect(isFullscreen) {
-        if (isFullscreen) {
-            controlsVisible = true // 进入全屏先显示控制条（退出后再进入时重置）
-            if (playerError == null) {
-                delay(100) // 等待按钮组合完成
-                runCatching { fullscreenButtonFocus.requestFocus() }
-            }
+    /** 请求焦点并重试：目标节点可能尚未组合完成（慢设备上尤其明显）。 */
+    suspend fun requestFocusWithRetry(fr: FocusRequester) {
+        var attempts = 0
+        while (attempts < FOCUS_RETRY_ATTEMPTS) {
+            if (runCatching { fr.requestFocus() }.isSuccess) return
+            delay(FOCUS_RETRY_MS)
+            attempts++
         }
     }
 
-    // 全屏控制条自动隐藏计时器：显示后 3s 无操作隐藏；controlTick 变化即重启
+    // 进入全屏：显示控制条并重启计时
+    LaunchedEffect(isFullscreen) {
+        if (isFullscreen) {
+            controlsVisible = true
+            controlTick++
+        }
+    }
+
+    // 全屏控制条自动隐藏：显示后 3s 无操作 → 隐藏；controlTick 变化即重启计时
     LaunchedEffect(isFullscreen, controlsVisible, controlTick) {
         if (isFullscreen && controlsVisible) {
             delay(CONTROLS_AUTO_HIDE_MS)
             controlsVisible = false
-            // 2026-08-22：隐藏后把焦点重新锚定在「退出全屏」按钮（透明但仍在组合中）。
-            // 否则焦点一旦丢失（Media3 控制条抢占/释放系统焦点会级联触发 Compose
-            // focusOwner.releaseFocus），预览 handler 收不到按键，控制条永远唤不醒。
-            runCatching { fullscreenButtonFocus.requestFocus() }
         }
     }
 
-    // 2026-08-22 唤醒兜底：预览 handler 依赖 Compose 焦点路径（焦点在 Row 子树内才触发），
-    // 焦点丢失时按键到不了它。这里在视图层挂 OnKeyListener：任何未被 Compose 消费的按键
-    // 都能拿到，控制条隐藏时同样执行唤醒（与预览路径互斥：预览消费了就不会走到这里）。
-    // 注意：LocalView.current 是 @Composable getter，必须取在 composable 函数体内，
-    // 不能写在 DisposableEffect 的 effect lambda 里（其参数未标 @Composable）。
-    val currentView = LocalView.current
-    DisposableEffect(Unit) {
-        val listener = View.OnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN && isFullscreen && !controlsVisible) {
-                when (keyCode) {
-                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
-                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
-                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                        controlTick++ // 任何交互都重启自动隐藏计时
-                        controlsVisible = true
-                        // 2026-08-22：一起唤醒 Media3 自带控制条（与预览路径一致）
-                        if (playerError == null) playerViewRef?.showController()
-                        if (playerError == null) {
-                            scope.launch {
-                                delay(100) // 等按钮重新组合后再聚焦
-                                runCatching { fullscreenButtonFocus.requestFocus() }
-                            }
-                        }
-                        true // 消费，避免按键落到隐藏的按钮/播放器上
-                    }
-                    else -> false
-                }
+    // 焦点锚定（与可见性变化绑定，避免「隐藏后锚点尚未组合」的竞态）：
+    // 可见 → 焦点落在播放/暂停；隐藏 → 焦点落在占位锚点（保证按键仍能沿焦点路径到达）。
+    // 出错时不动焦点：此时展示错误浮层，焦点应归浮层按钮（由 errorRetryFocus 请求），
+    // 锚点若在此抢焦点会让用户无法操作浮层。
+    LaunchedEffect(isFullscreen, controlsVisible, playerError) {
+        if (isFullscreen && playerError == null) {
+            if (controlsVisible) {
+                requestFocusWithRetry(playPauseFocus)
             } else {
-                false
+                requestFocusWithRetry(hiddenAnchorFocus)
             }
         }
-        currentView.setOnKeyListener(listener)
-        onDispose { currentView.setOnKeyListener(null) }
+    }
+
+    // 自绘控制条的播放位置/时长：ExoPlayer 无「位置变化」回调（currentPosition 需轮询），
+    // 这里每 500ms 采样。仅控制条可见时采样——全屏沉浸观看时不必持续刷新 UI。
+    var positionMs by remember { mutableLongStateOf(0L) }
+    var durationMs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(controller, controlsVisible) {
+        while (true) {
+            if (controlsVisible) {
+                positionMs = controller.currentPositionMs()
+                durationMs = controller.durationMs()
+            }
+            delay(CONTROLS_POSITION_POLL_MS)
+        }
     }
 
     // 返回键：全屏中先退出全屏，非全屏才真正返回上一页
@@ -320,48 +325,41 @@ fun PlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(TvColors.BgBase)
-            // 全屏控制条交互：方向键/OK 键唤醒隐藏的控制条（隐藏时消费 KeyDown 并重新聚焦，
-            // 成对的 KeyUp 也一并吞掉——否则 clickable 在 KeyUp 触发点击，会误执行隐藏前
-            // 焦点所在的按钮）；控制条可见时放行按键（按钮正常接收焦点导航），仅重启自动隐藏计时
+            // 全屏按键处理：
+            // - 控制条隐藏：任意方向键/OK 只唤醒并消费本次按键，不执行隐藏前的按钮
+            // - 控制条可见：放行按键让按钮正常导航，仅重启自动隐藏计时
+            // 关闭 Media3 原生控制条后全页只剩这一套 Compose 焦点，落点可预期。
             .onPreviewKeyEvent { event ->
-                if (isFullscreen) {
-                    when (event.key) {
-                        Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight,
-                        Key.Enter, Key.DirectionCenter -> {
-                            if (event.type == KeyEventType.KeyDown) {
-                                val wasHidden = !controlsVisible
-                                controlTick++ // 任何交互都重启自动隐藏计时
-                                if (wasHidden) {
-                                    wakeConsumedKey = event.key // 记住唤醒键，KeyUp 一并吞掉
-                                    controlsVisible = true
-                                    // 2026-08-22：一起唤醒 Media3 自带控制条（播放/暂停、
-                                    // 进度条、快进快退等）——它有自己的 5s 自动隐藏，无法自行唤醒
-                                    if (playerError == null) playerViewRef?.showController()
-                                    if (playerError == null) {
-                                        scope.launch {
-                                            delay(100) // 等按钮重新组合后再聚焦
-                                            runCatching { fullscreenButtonFocus.requestFocus() }
-                                        }
-                                    }
-                                    true // 唤醒：消费本次按键，避免落到隐藏的按钮/播放器上
-                                } else {
-                                    wakeConsumedKey = null // 清理残留（异常中断的按键对）
-                                    false // 可见：放行，按钮正常接收焦点导航
-                                }
-                            } else if (event.type == KeyEventType.KeyUp) {
-                                if (event.key == wakeConsumedKey) {
-                                    wakeConsumedKey = null
-                                    true // 吞掉唤醒键的 KeyUp，避免触发隐藏前焦点所在按钮
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            }
-                        }
-                        else -> false
+                if (!isFullscreen) return@onPreviewKeyEvent false
+
+                // 唤醒键的成对 KeyUp 必须先吞掉（放在可见性判断之前）：
+                // 控制条在 KeyDown 时被唤醒、焦点随即落到「播放/暂停」，若放行 KeyUp，
+                // Compose clickable 会把它当作点击（Enter/OK 的点击在 KeyUp 触发），
+                // 表现为「刚唤醒就误触播放/暂停」。
+                if (event.type == KeyEventType.KeyUp && event.key == wakeConsumedKey) {
+                    wakeConsumedKey = null
+                    return@onPreviewKeyEvent true
+                }
+
+                val isWakeKey = when (event.key) {
+                    Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight,
+                    Key.Enter, Key.DirectionCenter -> true
+                    else -> false
+                }
+                if (!isWakeKey) return@onPreviewKeyEvent false
+
+                if (!controlsVisible) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        wakeConsumedKey = event.key // 记住唤醒键，其 KeyUp 一并吞掉
+                        controlsVisible = true
+                        controlTick++
+                        true
+                    } else {
+                        false
                     }
                 } else {
+                    // 可见：任何交互都重启自动隐藏计时，按键照常放行给按钮
+                    if (event.type == KeyEventType.KeyDown) controlTick++
                     false
                 }
             },
@@ -383,7 +381,11 @@ fun PlayerScreen(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
                             player = controller.player
-                            useController = true
+                            // 2026-08-25：关闭 Media3 自带控制条，改用自绘 PlayerControlsBar。
+                            // 原生控制条（播放/暂停、进度条、快进快退）位于原生 View 焦点系统，
+                            // 与本页 Compose 按钮是两套焦点，跨系统转移只能按屏幕矩形猜最近邻，
+                            // 方向键落点不可控（焦点在「返回」按右键会跳到「退出全屏」）。
+                            useController = false
                         }
                     },
                     update = { view -> playerViewRef = view },
@@ -397,10 +399,22 @@ fun PlayerScreen(
                         Text("缓冲中…", style = TvType.BodyMedium, color = TvColors.TextSecondary)
                     }
                 }
-                // 全屏时控制条自动隐藏：按钮透明但保留组合（避免焦点丢失后按键无法唤醒）
+                // 全屏时控制条自动隐藏：不组合（而非 alpha=0）——隐藏的按钮若仍在组合中
+                // 会继续参与焦点搜索，方向键可能落到看不见的按钮上。
                 val controlsShown = !isFullscreen || controlsVisible
-                // 返回按钮：左上角常驻（行为与遥控器返回键一致：全屏先退全屏）
-                if (playerError == null) {
+                // 隐藏态焦点锚点：1dp 不可见但可聚焦，保证隐藏时按键仍能沿焦点路径到达。
+                // 出错时不放置（焦点归错误浮层按钮，锚点会抢焦点）
+                if (isFullscreen && !controlsVisible && playerError == null) {
+                    Box(
+                        modifier = Modifier
+                            .size(1.dp)
+                            .align(Alignment.Center)
+                            .focusRequester(hiddenAnchorFocus)
+                            .focusable()
+                    )
+                }
+                // 返回按钮：左上角（行为与遥控器返回键一致：全屏先退全屏）
+                if (playerError == null && controlsShown) {
                     TvButton(
                         text = "← 返回",
                         style = TvButtonStyle.Secondary,
@@ -409,12 +423,11 @@ fun PlayerScreen(
                         onClick = { if (isFullscreen) isFullscreen = false else onBack() },
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(16.dp)
-                            .alpha(if (controlsShown) 1f else 0f),
+                            .padding(16.dp),
                     )
                 }
-                // 全屏切换按钮：右上角，常驻显示，遥控器可直接聚焦（compact 小尺寸）
-                if (playerError == null) {
+                // 全屏切换按钮：右上角
+                if (playerError == null && controlsShown) {
                     TvButton(
                         text = if (isFullscreen) "退出全屏" else "全屏",
                         style = TvButtonStyle.Secondary,
@@ -423,39 +436,31 @@ fun PlayerScreen(
                         onClick = { isFullscreen = !isFullscreen },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(16.dp)
-                            .focusRequester(fullscreenButtonFocus)
-                            .alpha(if (controlsShown) 1f else 0f),
+                            .padding(16.dp),
                     )
                 }
-                // 上一集按钮：全屏时左下角（2026-08-22 新增；与右下「下一集」对称；复用
-                // switchEpisode 切到上一集；已是第一集时隐藏，避免出现"灰色按钮"）
-                if (playerError == null && isFullscreen && currentIndex > 0) {
-                    TvButton(
-                        text = "上一集",
-                        style = TvButtonStyle.Secondary,
-                        fontSize = 18.sp,
-                        compact = true,
-                        onClick = { switchEpisode(currentIndex - 1) },
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(16.dp)
-                            .alpha(if (controlsShown) 1f else 0f),
-                    )
-                }
-                // 下一集按钮：全屏时右下角（2026-08-22 新增；保持单集播放架构，复用 switchEpisode
-                // 切到下一集；已是最后一集时隐藏，避免出现"灰色按钮"）
-                if (playerError == null && isFullscreen && currentIndex < epsState.lastIndex) {
-                    TvButton(
-                        text = "下一集",
-                        style = TvButtonStyle.Secondary,
-                        fontSize = 18.sp,
-                        compact = true,
-                        onClick = { switchEpisode(currentIndex + 1) },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(16.dp)
-                            .alpha(if (controlsShown) 1f else 0f),
+                // 自绘播放控制条：贴底（进度条 + 播放/暂停 + 快进退 + 上下集）。
+                // 关闭了 Media3 原生控制条，全页只有这一套 Compose 焦点。
+                // 全屏时受自动隐藏控制；非全屏时（右侧有选集栏）常驻，便于随时操作。
+                if (playerError == null && controlsShown) {
+                    PlayerControlsBar(
+                        isPlaying = isPlaying,
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        onTogglePlayPause = { controller.togglePlayPause() },
+                        onSeekBy = { delta -> controller.seekBy(delta) },
+                        onPrevEpisode = if (currentIndex > 0) {
+                            { switchEpisode(currentIndex - 1) }
+                        } else {
+                            null
+                        },
+                        onNextEpisode = if (currentIndex < epsState.lastIndex) {
+                            { switchEpisode(currentIndex + 1) }
+                        } else {
+                            null
+                        },
+                        playPauseFocus = if (isFullscreen) playPauseFocus else null,
+                        modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 }
                 // H2：播放错误浮层（重试 / 换源 / 返回）
@@ -567,8 +572,17 @@ fun PlayerScreen(
     }
 }
 
-/** 全屏时顶部控制条无操作自动隐藏的延迟时长。 */
+/** 全屏时控制条无操作自动隐藏的延迟时长。 */
 private const val CONTROLS_AUTO_HIDE_MS = 3_000L
+
+/** 自绘控制条的位置采样间隔（ExoPlayer 无位置变化回调，只能轮询）。 */
+private const val CONTROLS_POSITION_POLL_MS = 500L
+
+/** 焦点请求重试间隔（毫秒）。 */
+private const val FOCUS_RETRY_MS = 50L
+
+/** 焦点请求重试次数上限（50ms × 20 ≈ 1s；正常情况首次即成功，仅慢设备兜底）。 */
+private const val FOCUS_RETRY_ATTEMPTS = 20
 
 /** 从 Compose Context 找宿主 Activity（用于 FLAG_KEEP_SCREEN_ON）。 */
 private fun Context.findActivity(): Activity? = when (this) {
