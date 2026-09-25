@@ -41,14 +41,17 @@ fun TvDialog(
     onDismiss: () -> Unit,
 ) {
     val confirmFocus = remember { FocusRequester() }
-    // M2：弹窗打开后把焦点给确认主按钮。
+    val cancelFocus = remember { FocusRequester() }
+    // M2：弹窗打开后把焦点给主按钮。danger（删除历史/清空全部/退出登录）时改给「取消」：
+    // 破坏性操作不该「打开状态下多按一下 OK 就执行」，先把焦点放在取消键是最廉价的二次确认。
     // 2026-08-22 修复：Dialog 内容挂载（独立窗口）晚于协程执行时，requestFocus 会抛
     // IllegalStateException（FocusRequester is not initialized），慢设备（真机）上闪退；
     // 改为重试直到成功。
     LaunchedEffect(Unit) {
+        val target = if (danger) cancelFocus else confirmFocus
         var attempts = 0
         while (attempts < FOCUS_RETRY_ATTEMPTS) {
-            if (runCatching { confirmFocus.requestFocus() }.isSuccess) break
+            if (runCatching { target.requestFocus() }.isSuccess) break
             delay(FOCUS_RETRY_MS)
             attempts++
         }
@@ -81,6 +84,7 @@ fun TvDialog(
                     text = cancelText,
                     style = TvButtonStyle.Secondary,
                     onClick = onDismiss,
+                    modifier = Modifier.focusRequester(cancelFocus),
                 )
                 Spacer(Modifier.width(20.dp))
                 TvButton(

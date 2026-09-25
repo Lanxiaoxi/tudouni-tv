@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvShapes
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.delay
 
 /**
  * 选集网格（对应设计方案 §5.8）：
@@ -51,7 +52,8 @@ import com.tudouni.tv.ui.theme.TvType
  * - 默认：--bg-elevated + 次级字；当前集：accent 底 + 深字（800）
  * - 焦点：scale 1.08 + 白描边（当前集）/ accent 描边（普通项）—— 已选中 ≠ 焦点所在，视觉可区分
  * - 方向键网格移动；数字键 0-9 直接跳集（1-9 → 1-9 集，0 → 第 10 集）；滚动跟随
- * - [initialFocusIndex]：进入页面时滚动到该集并请求焦点（播放页/详情页恢复进度后直接聚焦当前集）
+ * - [initialFocusIndex]：进入页面时滚动到该集并请求焦点（只在**首次进入**时生效；
+ *   播放页传的是 currentIndex，换集不应再次抢焦点）
  */
 @Composable
 fun EpisodeGrid(
@@ -71,14 +73,22 @@ fun EpisodeGrid(
         if (count > 0) gridState.scrollToItem(currentIndex.coerceIn(0, count - 1))
     }
 
-    // 进入页面：滚动到指定集并聚焦（等滚动完成 + item 组合后请求焦点）
+    // 进入页面：滚动到指定集并聚焦。
+    // startFocusIndex 用 remember 固定成「首次进入时的值」：调用方（播放页）传的是 currentIndex，
+    // 若直接把它当 LaunchedEffect 的 key，每次换集都会重跑 → 延迟后把焦点从控制条/用户所在位置
+    // 硬拽回选集格，用户想连按「下一集」时按不到，按 OK 还会落在当前集上。
+    // 等 item 组合改用「重试 + 捕获未初始化异常」，固定 delay 在慢设备上不一定够。
     val initialFocusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(initialFocusIndex) {
-        val target = initialFocusIndex ?: return@LaunchedEffect
-        if (count > 0) {
-            gridState.scrollToItem(target.coerceIn(0, count - 1))
-            kotlinx.coroutines.delay(180)
-            initialFocusRequester.requestFocus()
+    val startFocusIndex = remember { initialFocusIndex }
+    LaunchedEffect(startFocusIndex) {
+        val target = startFocusIndex ?: return@LaunchedEffect
+        if (count <= 0) return@LaunchedEffect
+        gridState.scrollToItem(target.coerceIn(0, count - 1))
+        repeat(FOCUS_RETRY_ATTEMPTS) {
+            if (runCatching { initialFocusRequester.requestFocus() }.isSuccess) {
+                return@LaunchedEffect
+            }
+            delay(FOCUS_RETRY_MS)
         }
     }
 
@@ -131,7 +141,7 @@ fun EpisodeGrid(
                 cellWidth = cellWidth,
                 cellHeight = cellHeight,
                 fontSize = fontSize,
-                modifier = if (index == initialFocusIndex) Modifier.focusRequester(initialFocusRequester) else Modifier,
+                modifier = if (index == startFocusIndex) Modifier.focusRequester(initialFocusRequester) else Modifier,
             )
         }
     }
@@ -203,3 +213,9 @@ private fun EpisodeCell(
         )
     }
 }
+
+/** 焦点请求重试间隔（毫秒）。 */
+private const val FOCUS_RETRY_MS = 50L
+
+/** 焦点请求重试次数上限（50ms × 20 ≈ 1s；LazyGrid 的 item 在测量阶段才组合，慢设备需兜底）。 */
+private const val FOCUS_RETRY_ATTEMPTS = 20

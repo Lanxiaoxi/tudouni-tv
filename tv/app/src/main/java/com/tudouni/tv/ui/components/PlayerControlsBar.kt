@@ -74,7 +74,9 @@ const val SEEK_STEP_MS = 15_000L
  * - 控制条需要「不抢焦点」时，调用方直接不组合它（而非传入不可聚焦标志）——
  *   不组合才能同时保证视觉隐藏与焦点不可达
  *
- * @param isPlaying 是否播放中（决定图标与标签）
+ * @param isPlaying 是否处于「应播放」态（决定图标与标签）。调用方应传
+ *   PlayerController.playWhenReady 而不是 isPlaying：缓冲/seek 期间 isPlaying 为 false，
+ *   图标会错误地显示成「▶ 播放」
  * @param positionMs 当前播放位置
  * @param durationMs 总时长（未知传 0：进度条禁用聚焦、时长显示 --:--）
  * @param onTogglePlayPause 播放/暂停
@@ -210,7 +212,12 @@ fun PlayerControlsBar(
                 .fillMaxWidth()
                 .then(
                     when {
-                        scrubFocus != null -> Modifier.focusProperties { up = scrubFocus }
+                        // 只有进度条真的可聚焦时才把「向上」路由给它：时长未知时它是
+                        // focusable(enabled = false)，节点根本不存在，路由过去会让上键被静默吞掉
+                        // （自定义路由失败后 Compose 不做几何兜底）→ 退回顶栏落点。
+                        hasDuration && scrubFocus != null ->
+                            Modifier.focusProperties { up = scrubFocus }
+
                         upFocus != null -> Modifier.focusProperties { up = upFocus }
                         else -> Modifier
                     }

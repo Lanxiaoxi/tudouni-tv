@@ -35,6 +35,15 @@ class PlayerController(context: Context) {
     /** 当前是否正在播放（供 UI 显示播放/暂停态）。 */
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    private val _playWhenReady = MutableStateFlow(false)
+    /**
+     * 用户的播放意图（Media3 的 playWhenReady）：true = 应该播放，false = 已暂停。
+     * UI 图标与 [togglePlayPause] 都应该用这个而不是 [isPlaying]——
+     * 缓冲中/seek 期间 `isPlaying == false` 但 `playWhenReady == true`，
+     * 用 isPlaying 画图标会在缓冲时显示「▶ 播放」，用户按下 OK 反而把正在缓冲的播放真暂停了。
+     */
+    val playWhenReady: StateFlow<Boolean> = _playWhenReady.asStateFlow()
+
     private val _playbackEnded = MutableStateFlow(false)
     /** 播放结束标记（供 PlayerScreen 监听自动连播）。 */
     val playbackEnded: StateFlow<Boolean> = _playbackEnded.asStateFlow()
@@ -64,12 +73,19 @@ class PlayerController(context: Context) {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlaying.value = isPlaying
             }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                _playWhenReady.value = playWhenReady
+            }
         })
     }
 
     /** 播放指定地址，可选起始位置（毫秒）。 */
     fun play(url: String, startPositionMs: Long = 0L) {
         _error.value = null
+        // 开始播新内容即清掉「已播完」标记：自动连播那 1 秒延迟里用户手动切集时，
+        // 这个标记能让待执行的连播协程自行作废（见 PlayerScreen 对 playbackEnded 的监听）。
+        _playbackEnded.value = false
         player.setMediaItem(MediaItem.fromUri(url), startPositionMs)
         player.prepare()
         player.playWhenReady = true
@@ -80,10 +96,12 @@ class PlayerController(context: Context) {
 
     /**
      * 播放/暂停切换（自绘控制条用）。
+     * 判断依据是 playWhenReady 而不是 isPlaying：缓冲/seek 期间 isPlaying 为 false
+     * 但用户并没有暂停，用 isPlaying 判断会把「缓冲中的播放」真的暂停掉。
      * Media3 的 play()/pause() 本质是设置 playWhenReady；播放结束后按播放会从头重播。
      */
     fun togglePlayPause() {
-        if (player.isPlaying) player.pause() else player.play()
+        if (player.playWhenReady) player.pause() else player.play()
     }
 
     /**

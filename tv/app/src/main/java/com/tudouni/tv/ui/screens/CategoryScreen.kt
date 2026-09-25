@@ -52,6 +52,7 @@ import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.components.TvChip
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** cat 参数 → 中文名（与 /api/vodlist cat 参数对齐）。 */
@@ -85,16 +86,25 @@ fun CategoryScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var retryKey by remember { mutableStateOf(0) }
     var contentFilterEnabled by remember { mutableStateOf(settingsPreference.isContentFilterEnabled()) }
+    // 服务端已明确「没有更多」（返回空页）：内容过滤默认开启时 items 会少掉被过滤的条目，
+    // 只靠 items.size < total 永远不可能相等 → 滚到底就无限翻页、页脚永远不显示「已显示全部」。
+    var exhausted by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
 
     // 二级细分类型（从已加载数据聚合，按出现频次取 top 10）+ 当前选中的细分
     var subCats by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSub by remember { mutableStateOf<String?>(null) }
 
-    // 初始焦点：加载完成后给第一个 chip（「全部」），否则整页方向键不工作
+    // 初始焦点：加载完成后给第一个 chip（「全部」），否则整页方向键不工作。
+    // LazyRow 的 item 在测量阶段才组合，首帧就请求焦点会抛 IllegalStateException
+    // （FocusRequester 未初始化）把 App 打崩 → 与其它页面同款处理：捕获异常 + 重试。
     val firstChipFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(loadingFirst) {
-        if (!loadingFirst) firstChipFocus.requestFocus()
+        if (loadingFirst) return@LaunchedEffect
+        repeat(FOCUS_RETRY_ATTEMPTS) {
+            if (runCatching { firstChipFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+            delay(FOCUS_RETRY_MS)
+        }
     }
 
     suspend fun load(pageToLoad: Int, isFirst: Boolean) {
@@ -138,6 +148,8 @@ fun CategoryScreen(
                         total = data.total
                         page = pageToLoad
                     }
+                    // 服务端返回空页 → 确认没有更多（本轮分页到此结束）
+                    if (data.items.isEmpty()) exhausted = true
                     // 加载成功写入缓存（TTL 100 分钟，切页/返回直接命中）
                     CategoryCache.put(cat ?: "", contentFilterEnabled, items, total, page)
                 } else {
@@ -160,6 +172,7 @@ fun CategoryScreen(
             items = cached.first
             total = cached.second
             page = cached.third
+            exhausted = false
             loadingFirst = false
             error = null
             selectedSub = null
@@ -167,6 +180,7 @@ fun CategoryScreen(
             items = emptyList()
             selectedSub = null
             page = 1
+            exhausted = false
             load(1, isFirst = true)
         }
     }
@@ -188,8 +202,8 @@ fun CategoryScreen(
     // M6 修复：count 是「当前网格可见项总数」，细分过滤后可能远小于 items.size，
     // 原条件 last >= count-6 在过滤后恒真 → 疯狂拉页。要求网格项数 >= 7 才自动加载，
     // 过滤后项少时靠底部「加载更多」按钮手动翻页。
-    val hasMore = items.size < total
-    LaunchedEffect(gridState, cat, items.size, total) {
+    val hasMore = !exhausted && items.size < total
+    LaunchedEffect(gridState, cat, items.size, total, exhausted) {
         snapshotFlow {
             val info = gridState.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -338,3 +352,9 @@ fun CategoryScreen(
         }
     }
 }
+
+/** 焦点请求重试间隔（毫秒）。 */
+private const val FOCUS_RETRY_MS = 50L
+
+/** 焦点请求重试次数上限（50ms × 20 ≈ 1s；LazyRow 的 item 在测量阶段才组合，慢设备需兜底）。 */
+private const val FOCUS_RETRY_ATTEMPTS = 20

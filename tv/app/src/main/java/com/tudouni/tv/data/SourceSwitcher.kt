@@ -1,5 +1,7 @@
 package com.tudouni.tv.data
 
+import kotlinx.coroutines.CancellationException
+
 /**
  * 换源工具（M5/H2 修复）：资源站单源失效时，用同一片名在其他源中找替代。
  *
@@ -31,22 +33,23 @@ object SourceSwitcher {
     suspend fun findAlternatives(title: String?, excludeSource: String?): List<VideoItem> {
         if (title.isNullOrBlank()) return emptyList()
         val result = mutableListOf<VideoItem>()
-        for ((key, name) in KNOWN_SOURCES) {
+        for ((key, _) in KNOWN_SOURCES) {
             if (key == excludeSource) continue
             try {
-                val resp = ApiClient.get().search(wd = title, page = 1)
+                // 必须带 source：不带的话 10 次循环发的是同一个全源聚合请求，
+                // 返回条目的 vod_id 属于"某个源"，拿去请求 /api/detail?source=<别的源> 必然查不到。
+                val resp = ApiClient.get().search(wd = title, page = 1, source = key)
                 if (!resp.isSuccessful) continue
-                val body = resp.body() ?: continue
-                val data = body.data ?: continue
-                val hit = data.items.firstOrNull { it.vodName == title && it.sourceCode != excludeSource }
-                if (hit != null) {
-                    result.add(
-                        hit.copy(
-                            sourceCode = key,
-                            sourceName = name,
-                        )
-                    )
+                val data = resp.body()?.data ?: continue
+                // 信任后端按源过滤后打的 source_code / vod_id 组合，不再手工改标签。
+                val hit = data.items.firstOrNull {
+                    it.vodName == title && it.sourceCode == key && !it.vodId.isNullOrBlank()
                 }
+                if (hit != null) result.add(hit)
+            } catch (e: CancellationException) {
+                // 超时/离开页面导致的取消必须继续上抛，否则 withTimeoutOrNull 之类的
+                // 限时会因为这里吞掉 CancellationException 而失效
+                throw e
             } catch (_: Exception) {
                 // 单源探测失败跳过
             }

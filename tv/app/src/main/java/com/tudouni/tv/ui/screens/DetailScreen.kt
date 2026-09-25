@@ -44,7 +44,9 @@ import com.tudouni.tv.data.SourceSwitcher
 import com.tudouni.tv.data.TvRepository
 import com.tudouni.tv.data.VideoItem
 import com.tudouni.tv.data.isAuthExpired
+import com.tudouni.tv.data.pageErrorMessage
 import com.tudouni.tv.data.resolveMediaUrl
+import com.tudouni.tv.data.userFacingError
 import com.tudouni.tv.ui.LocalRelogin
 import com.tudouni.tv.ui.components.EpisodeGrid
 import com.tudouni.tv.ui.components.FullScreenLoading
@@ -54,9 +56,11 @@ import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.components.TvChip
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 详情页（对应设计方案 §6.4，全屏 L3 页）：
@@ -79,6 +83,10 @@ fun DetailScreen(
     var detail by remember { mutableStateOf<DetailResponse?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    // 失败的具体原因（后端文案或网络异常）：不再把所有失败都压成「获取详情失败」
+    var detailError by remember { mutableStateOf<String?>(null) }
+    // 重试计数：非 401 的失败（网络抖动/502）允许原地重试，不必退回列表
+    var retryKey by remember { mutableStateOf(0) }
     var history by remember { mutableStateOf<HistoryItem?>(null) }
     // M5：其他可用来源（同片名探测结果）
     var altSources by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
@@ -91,6 +99,8 @@ fun DetailScreen(
     var hasResume by remember { mutableStateOf(false) }
 
     val playFocusRequester = remember { FocusRequester() }
+    // 「暂无可用地址」时主按钮不可聚焦，焦点退回左上角「返回」
+    val backFocusRequester = remember { FocusRequester() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // 加载详情 + 恢复进度（并行）+ 探测其他源（失败均不影响主体展示）
@@ -104,9 +114,14 @@ fun DetailScreen(
                     if (resp.isSuccessful) {
                         resp.body() to false
                     } else {
+                        // 保留后端文案（「未获取到视频详情」/「无效的视频ID格式」/502 等）
+                        detailError = resp.pageErrorMessage()
                         null to resp.isAuthExpired()
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    // 网络异常（超时/DNS/连接重置）与业务错误区分开，文案交给用户看
+                    detailError = e.userFacingError()
                     null to false
                 }
             }
@@ -119,8 +134,13 @@ fun DetailScreen(
             }
             val altDeferred = async {
                 try {
-                    SourceSwitcher.findAlternatives(target.vodName, target.sourceCode)
-                } catch (_: Exception) {
+                    // 同片名探测要串行问 10 个源，最坏会被单个源的读超时拖成分钟级。
+                    // 限时 3 秒：拿不到就先展示主体，详情页不该被这个「附加信息」堵住。
+                    withTimeoutOrNull(ALT_PROBE_TIMEOUT_MS) {
+                        SourceSwitcher.findAlternatives(target.vodName, target.sourceCode)
+                    } ?: emptyList()
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     emptyList()
                 }
             }
@@ -145,19 +165,24 @@ fun DetailScreen(
         }
     }
 
-    LaunchedEffect(item.vodId, item.sourceCode) {
+    LaunchedEffect(item.vodId, item.sourceCode, retryKey) {
         loading = true
         error = null
+        detailError = null
         val (d, authExpired) = loadDetailAndHistory(currentItem)
-        if (d == null) error = if (authExpired) AUTH_EXPIRED_MESSAGE else "获取详情失败"
+        if (d == null) error = detailError ?: if (authExpired) AUTH_EXPIRED_MESSAGE else "获取详情失败"
         loading = false
     }
 
-    // L4：加载完成（且详情可用）后才请求播放按钮焦点
+    // L4：加载完成（且详情可用）后才请求播放按钮焦点（避免 loading 期 requestFocus 落空）。
+    // 「暂无可用地址」时主按钮是禁用态（clickable(enabled=false) 不进焦点树），
+    // 往它请求焦点会静默失败、整页没有焦点 → 退回左上角「返回」。
     LaunchedEffect(loading, detail) {
-        if (!loading && detail != null) {
-            playFocusRequester.requestFocus()
-        }
+        if (loading) return@LaunchedEffect
+        // 局部委托属性（by remember）不能智能转换，先取出来再用
+        val d = detail ?: return@LaunchedEffect
+        val target = if (d.episodes.isNullOrEmpty()) backFocusRequester else playFocusRequester
+        runCatching { target.requestFocus() }
     }
 
     // M5：切换到其他来源
@@ -188,9 +213,10 @@ fun DetailScreen(
 
             error != null -> LoadFailedState(
                 message = error,
-                // 详情页的「重试」是返回列表；登录态失效时同样给「返回」出口
-                retryText = "返回",
-                onRetry = onBack,
+                // 非 401 的失败（网络抖动 / 502）允许原地重试，不必退回列表；
+                // 401 由 LoadFailedState 内部走「重新登录」分支，用不到这里的重试
+                retryText = "重试",
+                onRetry = { retryKey++ },
                 onRelogin = LocalRelogin.current,
             )
 
@@ -210,6 +236,7 @@ fun DetailScreen(
                             text = "← 返回",
                             style = TvButtonStyle.Secondary,
                             onClick = onBack,
+                            modifier = Modifier.focusRequester(backFocusRequester),
                         )
                         Spacer(Modifier.width(20.dp))
                         info?.remarks?.let { r ->
@@ -377,3 +404,6 @@ fun DetailScreen(
         }
     }
 }
+
+/** 「其他来源」探测的整体超时（毫秒）：串行问 10 个源，不能让它拖住详情页首屏。 */
+private const val ALT_PROBE_TIMEOUT_MS = 3_000L

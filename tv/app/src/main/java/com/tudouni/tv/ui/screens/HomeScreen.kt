@@ -120,23 +120,25 @@ fun HomeScreen(
     // Hero「立即播放」焦点（初始焦点在导航栏首页；此 requester 仅用于轮换动画后焦点恢复）
     val heroPlayFocus = remember { androidx.compose.ui.focus.FocusRequester() }
 
+    // 记录用户焦点是否在 Hero 区域（切换动画重建内容会丢焦点，动画结束后需恢复）
+    var heroFocused by remember { mutableStateOf(false) }
     // Hero 轮换：取 items 前 5 个（沿用 firstOrNull 的排序，只是数量变多），自动定时切换
     val heroCandidates = items.take(5)
     var heroIndex by remember { mutableIntStateOf(0) }
     // 手动切换指示器时 +1，重启自动轮换计时（避免刚手动选完立刻被自动切走）
     var heroRotateTick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(heroCandidates.size, heroRotateTick) {
-        if (heroCandidates.size > 1) {
-            while (true) {
-                delay(HERO_ROTATE_INTERVAL_MS)
-                heroIndex = (heroIndex + 1) % heroCandidates.size
-            }
+    LaunchedEffect(heroCandidates.size, heroRotateTick, heroFocused) {
+        if (heroCandidates.size <= 1) return@LaunchedEffect
+        // 焦点在 Hero 区（按钮/指示条）时不自动轮换：每 7 秒换一张会把用户正在操作的内容
+        // 换掉，而且换完还要把焦点抢回按钮。焦点离开 Hero 后自动恢复轮换。
+        if (heroFocused) return@LaunchedEffect
+        while (true) {
+            delay(HERO_ROTATE_INTERVAL_MS)
+            heroIndex = (heroIndex + 1) % heroCandidates.size
         }
     }
     // heroIndex 越界保护（items 后台补齐/过滤后数量可能变化；空列表时取 0 避免 coerceIn 空区间异常）
     val safeHeroIndex = heroIndex.coerceIn(0, (heroCandidates.size - 1).coerceAtLeast(0))
-    // 记录用户焦点是否在 Hero 区域（切换动画重建内容会丢焦点，动画结束后需恢复）
-    var heroFocused by remember { mutableStateOf(false) }
     val latestHeroFocused by rememberUpdatedState(heroFocused)
     LaunchedEffect(safeHeroIndex) {
         if (latestHeroFocused) {

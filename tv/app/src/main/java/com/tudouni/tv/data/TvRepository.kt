@@ -1,5 +1,7 @@
 package com.tudouni.tv.data
 
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -13,6 +15,8 @@ import java.io.IOException
  * 任意设备登录同一账号，进入详情/播放页即可恢复上次进度与集数。
  */
 object TvRepository {
+
+    private const val TAG = "TvRepository"
 
     /** 进度上报节流间隔（播放中每 10s 一次 + 暂停/退出时兜底一次）。 */
     const val PROGRESS_REPORT_INTERVAL_MS = 10_000L
@@ -33,6 +37,10 @@ object TvRepository {
      * @param durationMs 总时长毫秒
      * @param force 为 true 时即使 duration<=0 也上报（换集标记场景：仅更新集数，进度归零）
      * 正常播放进度在拿不到时长（duration<=0）时不上报，避免把未知时长写成 0。
+     *
+     * 注意：本方法不抛异常（网络错误返回 false）。Retrofit 的 suspend 方法在 DNS/超时/连接重置时
+     * 会抛 IOException，而调用点（播放页 10s 轮询、退出兜底）都在协程里且没有 try/catch，
+     * 异常会沿协程上抛到 UncaughtExceptionHandler 直接把 App 打崩。
      */
     suspend fun reportProgress(
         item: VideoItem,
@@ -45,21 +53,28 @@ object TvRepository {
     ): Boolean = withContext(Dispatchers.IO) {
         if (durationMs <= 0 && !force) return@withContext false
         if (item.vodName.isNullOrBlank()) return@withContext false
-        reportMutex.withLock {
-            val resp = ApiClient.get().putHistory(
-                HistoryBody(
-                    title = item.vodName ?: "",
-                    vodId = item.vodId ?: "",
-                    source = item.sourceCode ?: "",
-                    pic = item.pic ?: "",
-                    episodes = episodes,
-                    episodeIndex = episodeIndex,
-                    position = positionMs / 1000.0,
-                    duration = durationMs / 1000.0,
-                    timestamp = timestamp,
+        try {
+            reportMutex.withLock {
+                val resp = ApiClient.get().putHistory(
+                    HistoryBody(
+                        title = item.vodName ?: "",
+                        vodId = item.vodId ?: "",
+                        source = item.sourceCode ?: "",
+                        pic = item.pic ?: "",
+                        episodes = episodes,
+                        episodeIndex = episodeIndex,
+                        position = positionMs / 1000.0,
+                        duration = durationMs / 1000.0,
+                        timestamp = timestamp,
+                    )
                 )
-            )
-            resp.isSuccessful
+                resp.isSuccessful
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "进度上报失败（${item.vodName} @ ${positionMs}ms）", e)
+            false
         }
     }
 
@@ -96,19 +111,33 @@ object TvRepository {
         return positionMs >= RESUME_MIN_MS && positionMs <= durationMs - RESUME_TAIL_MARGIN_MS
     }
 
-    /** 删除单条观看历史。 */
+    /** 删除单条观看历史（网络失败返回 false，不抛异常）。 */
     suspend fun deleteHistoryItem(item: HistoryItem): Boolean = withContext(Dispatchers.IO) {
-        val resp = ApiClient.get().deleteHistoryItem(
-            vodId = item.vodId,
-            source = item.source,
-            title = item.title,
-        )
-        resp.isSuccessful
+        try {
+            val resp = ApiClient.get().deleteHistoryItem(
+                vodId = item.vodId,
+                source = item.source,
+                title = item.title,
+            )
+            resp.isSuccessful
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "删除历史失败", e)
+            false
+        }
     }
 
-    /** 清空全部观看历史。 */
+    /** 清空全部观看历史（网络失败返回 false，不抛异常）。 */
     suspend fun clearHistory(): Boolean = withContext(Dispatchers.IO) {
-        ApiClient.get().clearHistory().isSuccessful
+        try {
+            ApiClient.get().clearHistory().isSuccessful
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "清空历史失败", e)
+            false
+        }
     }
 
     // ---------- 搜索历史 ----------
@@ -129,7 +158,14 @@ object TvRepository {
     }
 
     suspend fun addSearchHistory(keyword: String): Boolean = withContext(Dispatchers.IO) {
-        val resp = ApiClient.get().postSearchHistory(mapOf("keyword" to keyword))
-        resp.isSuccessful
+        try {
+            val resp = ApiClient.get().postSearchHistory(mapOf("keyword" to keyword))
+            resp.isSuccessful
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "写入搜索历史失败", e)
+            false
+        }
     }
 }

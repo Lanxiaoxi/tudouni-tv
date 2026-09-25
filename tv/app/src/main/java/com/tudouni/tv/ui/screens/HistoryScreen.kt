@@ -228,11 +228,8 @@ fun HistoryScreen(
             onConfirm = {
                 deleteTarget = null
                 scope.launch {
-                    try {
-                        TvRepository.deleteHistoryItem(target)
-                    } catch (_: Exception) {
-                        error = "删除失败，请检查网络"
-                    }
+                    // TvRepository 已把网络异常收敛成 false（不再抛异常），用返回值判定
+                    if (!TvRepository.deleteHistoryItem(target)) error = "删除失败，请检查网络"
                     load()
                 }
             },
@@ -250,11 +247,8 @@ fun HistoryScreen(
             onConfirm = {
                 showClearConfirm = false
                 scope.launch {
-                    try {
-                        TvRepository.clearHistory()
-                    } catch (_: Exception) {
-                        error = "清空失败，请检查网络"
-                    }
+                    // 同上：用返回值判定失败，避免静默无反馈
+                    if (!TvRepository.clearHistory()) error = "清空失败，请检查网络"
                     load()
                 }
             },

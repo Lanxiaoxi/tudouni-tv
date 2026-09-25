@@ -3,6 +3,7 @@ package com.tudouni.tv.ui.screens
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -47,6 +48,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
 import com.tudouni.tv.data.SettingsPreference
@@ -60,8 +64,10 @@ import com.tudouni.tv.ui.components.TvButton
 import com.tudouni.tv.ui.components.TvButtonStyle
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -120,8 +126,10 @@ fun PlayerScreen(
     // H2：播放错误 / 缓冲状态
     val playerError by controller.error.collectAsState()
     val buffering by controller.isBuffering.collectAsState()
-    // 播放/暂停态（自绘控制条图标用）
-    val isPlaying by controller.isPlaying.collectAsState()
+    // 播放/暂停态（自绘控制条图标用）：用 playWhenReady 而不是 isPlaying——
+    // 缓冲/seek 期间 isPlaying=false 但用户并没有暂停，按 isPlaying 画图标会在缓冲时
+    // 显示「▶ 播放」，用户按下 OK 反而把正在缓冲的播放真暂停了。
+    val playState by controller.playWhenReady.collectAsState()
 
     // 自动连播设置
     val settingsPreference = remember { SettingsPreference(context) }
@@ -129,8 +137,9 @@ fun PlayerScreen(
         mutableStateOf(settingsPreference.isAutoplayEnabled())
     }
 
-    // 初始播放（带恢复位置）
-    LaunchedEffect(Unit) {
+    // 初始播放（带恢复位置）。key 用 url 而不是 Unit：万一上层在「不离开组合」的情况下
+    // 换了播放地址，也要重新 setMediaItem，只按 Unit 会继续播旧地址。
+    LaunchedEffect(url) {
         controller.play(url, resumePositionMs)
     }
 
@@ -138,25 +147,54 @@ fun PlayerScreen(
     val errorRetryFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(playerError) {
         if (playerError != null) {
-            errorRetryFocus.requestFocus()
+            // 浮层按钮可能比本 effect 晚一帧挂载，未初始化时 requestFocus 会抛异常
+            runCatching { errorRetryFocus.requestFocus() }
         }
     }
 
-    // 播放中每 10s 上报进度（rememberUpdatedState 保证读到最新集数；fire-and-forget，失败静默）
+    // 播放中每 10s 上报进度（rememberUpdatedState 保证读到最新集数；失败只记日志，不抛异常）
+    // 位置没有前进（暂停/卡住）时跳过：否则暂停期间也会每 10s 刷新一次服务端 timestamp，
+    // 这条历史会一直挂在「今天」下，用户明明没在看。
     val latestIndex by rememberUpdatedState(currentIndex)
     LaunchedEffect(controller) {
+        var lastReportedPos = -1L
         while (true) {
             delay(TvRepository.PROGRESS_REPORT_INTERVAL_MS)
             val pos = controller.currentPositionMs()
+            if (pos <= 0 || pos == lastReportedPos) continue
             val dur = controller.durationMs()
-            TvRepository.reportProgress(
+            val reported = TvRepository.reportProgress(
                 item = currentItem,
                 episodes = epsState,
                 episodeIndex = latestIndex,
                 positionMs = pos,
                 durationMs = dur,
             )
+            if (reported) lastReportedPos = pos
         }
+    }
+
+    // 退到后台（按 HOME / 切到别的 App / 熄屏）时暂停：ExoPlayer 不会自己暂停，
+    // 电视上按 HOME 后声音会一直放下去。回到前台时只在「离开前本来在放」的情况下恢复。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, controller) {
+        var resumeOnForeground = false
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    resumeOnForeground = controller.player.playWhenReady
+                    // 播放器可能已被释放（本页正在退出）→ 忽略
+                    runCatching { controller.player.pause() }
+                }
+                Lifecycle.Event.ON_START -> {
+                    if (resumeOnForeground) runCatching { controller.player.play() }
+                    resumeOnForeground = false
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // 退出页面：立即上报一次 + 释放播放器 + 恢复屏幕常亮 + 解绑 PlayerView
@@ -165,9 +203,18 @@ fun PlayerScreen(
         onDispose {
             val pos = controller.currentPositionMs()
             val dur = controller.durationMs()
-            if (pos > 0 && dur > 0) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    TvRepository.reportProgress(currentItem, epsState, currentIndex, pos, dur)
+            // 时长未知（HLS 直播/边下边播没给出时长）也要留下观看记录：
+            // force=true 允许 duration=0 上报，否则这类片源永远进不了历史。
+            if (pos > 0) {
+                exitReportScope.launch {
+                    TvRepository.reportProgress(
+                        item = currentItem,
+                        episodes = epsState,
+                        episodeIndex = currentIndex,
+                        positionMs = pos,
+                        durationMs = dur,
+                        force = dur <= 0,
+                    )
                 }
             }
             playerViewRef?.player = null
@@ -179,6 +226,9 @@ fun PlayerScreen(
     // 局部函数需在 LaunchedEffect 使用前声明（Kotlin 局部函数必须先声明后使用）
     fun switchEpisode(index: Int) {
         if (index !in epsState.indices) return
+        // 重复选中「正在播的这一集」直接忽略：以前会重新 setMediaItem 从头播，
+        // 并把 position=0 强写进历史（force=true），把断点续播位置抹掉。
+        if (index == currentIndex) return
         currentIndex = index
         showResumeTip = false
         controller.playEpisode(epsState[index])
@@ -188,14 +238,17 @@ fun PlayerScreen(
     }
 
     // 监听播放结束并自动连播
+    // currentIndex 也作为 key：这 1 秒里用户手动切集会让本协程重启、延迟随之取消；
+    // 而 PlayerController.play() 会清掉结束标记，新协程看到 false 直接返回，不会「再前进一集」。
     val playbackEnded by controller.playbackEnded.collectAsState()
-    LaunchedEffect(playbackEnded) {
-        if (playbackEnded) {
-            if (autoplayEnabled && currentIndex < epsState.size - 1) {
-                // 自动连播开启 && 有下一集
-                delay(1000)  // 1 秒延迟，给用户反应时间
-                switchEpisode(currentIndex + 1)
-            }
+    LaunchedEffect(playbackEnded, currentIndex) {
+        if (!playbackEnded) return@LaunchedEffect
+        val nextIndex = currentIndex + 1
+        if (autoplayEnabled && nextIndex in epsState.indices) {
+            // 自动连播开启 && 有下一集
+            delay(AUTOPLAY_DELAY_MS)  // 1 秒延迟，给用户反应时间
+            switchEpisode(nextIndex)
+        } else {
             // 重置标记，否则播放下一集后还会触发
             controller.resetPlaybackEnded()
         }
@@ -267,7 +320,10 @@ fun PlayerScreen(
     LaunchedEffect(isFullscreen, controlsVisible, playerError) {
         if (isFullscreen && playerError == null) {
             if (controlsVisible) {
-                requestFocusWithRetry(scrubFocus)
+                // 时长未知时进度条「不可聚焦」（focusable(enabled=false) 不生成节点），
+                // 把焦点投给它等于凭空丢焦点（requestFocus 找不到目标且不抛异常），
+                // 此时改投「播放/暂停」按钮。
+                requestFocusWithRetry(if (controller.durationMs() > 0) scrubFocus else playPauseFocus)
             } else {
                 requestFocusWithRetry(hiddenAnchorFocus)
             }
@@ -287,6 +343,11 @@ fun PlayerScreen(
             delay(CONTROLS_POSITION_POLL_MS)
         }
     }
+
+    // 纵向（上/下）路由的落点：时长未知时进度条不可聚焦，路由到它会静默失败——
+    // FocusOwnerImpl 只对 Next/Previous 做几何兜底，上下键没有兜底，按键会被吞掉而焦点不动。
+    // 此时改为路由到「播放/暂停」按钮（它始终可聚焦）。
+    val scrubOrPlayFocus = if (durationMs > 0) scrubFocus else playPauseFocus
 
     // 返回键：全屏中先退出全屏，非全屏才真正返回上一页
     BackHandler(onBack = {
@@ -436,7 +497,7 @@ fun PlayerScreen(
                             // 「向下」显式路由到进度条（二级是按钮行「播放/暂停」）：
                             // 非全屏时几何搜索会优先选右侧选集栏（它从屏幕顶部开始，
                             // 纵向距离远小于底部控制条），焦点会跑到选集去。
-                            .focusProperties { down = scrubFocus },
+                            .focusProperties { down = scrubOrPlayFocus },
                     )
                 }
                 // 全屏切换按钮：右上角
@@ -450,7 +511,7 @@ fun PlayerScreen(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(16.dp)
-                            .focusProperties { down = scrubFocus },
+                            .focusProperties { down = scrubOrPlayFocus },
                     )
                 }
                 // 自绘播放控制条：贴底（进度条 + 播放/暂停 + 快进退 + 上下集）。
@@ -458,7 +519,7 @@ fun PlayerScreen(
                 // 全屏时受自动隐藏控制；非全屏时（右侧有选集栏）常驻，便于随时操作。
                 if (playerError == null && controlsShown) {
                     PlayerControlsBar(
-                        isPlaying = isPlaying,
+                        isPlaying = playState,
                         positionMs = positionMs,
                         durationMs = durationMs,
                         onTogglePlayPause = { controller.togglePlayPause() },
@@ -512,7 +573,10 @@ fun PlayerScreen(
                                 TvButton(
                                     text = "重试",
                                     style = TvButtonStyle.Secondary,
-                                    onClick = { controller.play(epsState[currentIndex], 0L) },
+                                    onClick = {
+                                        // getOrNull：选集为空时不能让 currentIndex 越界
+                                        epsState.getOrNull(currentIndex)?.let { controller.play(it, 0L) }
+                                    },
                                     modifier = Modifier.focusRequester(errorRetryFocus),
                                 )
                                 TvButton(
@@ -588,6 +652,21 @@ fun PlayerScreen(
         }
     }
 }
+
+/**
+ * 离开播放页时的兜底上报作用域。
+ * 组合此时已被销毁，不能再借 rememberCoroutineScope（作用域随组合一起取消）；
+ * 用独立作用域 + 异常处理器，保证上报不被打断，也不会因网络异常把进程带崩。
+ */
+private val exitReportScope = CoroutineScope(
+    SupervisorJob() + Dispatchers.IO +
+        CoroutineExceptionHandler { _, e -> Log.w(TAG, "退出播放页上报失败", e) }
+)
+
+private const val TAG = "PlayerScreen"
+
+/** 自动连播的延迟时长（给用户反应时间，期间手动切集即取消）。 */
+private const val AUTOPLAY_DELAY_MS = 1_000L
 
 /** 全屏时控制条无操作自动隐藏的延迟时长。 */
 private const val CONTROLS_AUTO_HIDE_MS = 3_000L

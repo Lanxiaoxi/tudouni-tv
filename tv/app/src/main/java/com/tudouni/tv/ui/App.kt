@@ -39,6 +39,7 @@ import com.tudouni.tv.ui.screens.SettingsScreen
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 屏幕状态机（手写导航，不用 navigation 库——TV 焦点恢复更可控，设计方案 §7.1）。
@@ -129,8 +130,11 @@ fun App() {
                 ApiClient.configure(t)
                 username = u ?: ""
                 // 开屏期间预拉首页首批数据（与 token 检查衔接，数据到位才进主页——
-                // 开屏图一次到底，进入主页直接见内容；预拉失败则 HomeScreen 自行加载兜底）
-                HomePrefetch.load(SettingsPreference(context).isContentFilterEnabled())
+                // 开屏图一次到底，进入主页直接见内容；预拉失败则 HomeScreen 自行加载兜底）。
+                // 限时 3 秒：没有超时的话 connect(10s)+read(20s) 会让开屏白等半分钟。
+                withTimeoutOrNull(HOME_PREFETCH_TIMEOUT_MS) {
+                    HomePrefetch.load(SettingsPreference(context).isContentFilterEnabled())
+                }
                 screen = Screen.Main(mainPage)
             } else {
                 screen = Screen.Login
@@ -306,6 +310,9 @@ private fun MainFrame(
         }
     }
 }
+
+/** 开屏预拉首页数据的超时（毫秒）：避免后端慢时 connect(10s)+read(20s) 把开屏拖到半分钟。 */
+private const val HOME_PREFETCH_TIMEOUT_MS = 3_000L
 
 /** 导航分类 → /api/vodlist cat 参数。 */
 private fun NavPage.toCat(): String? = when (this) {

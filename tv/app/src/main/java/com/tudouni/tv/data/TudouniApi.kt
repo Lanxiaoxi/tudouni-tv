@@ -45,10 +45,16 @@ interface TudouniApi {
     @GET("/api/hotrank/tencent")
     suspend fun tencentHot(): Response<ApiResponse<ItemsData>>
 
+    /**
+     * [source] 为资源站 key（多个用逗号分隔），对应后端 `/api/search` 的 `source` 参数。
+     * 传 null 表示全源聚合；换源探测必须传具体 key，否则返回的结果
+     * 其 `vod_id` 可能来自其它源，无法用于该源详情。
+     */
     @GET("/api/search")
     suspend fun search(
         @Query("wd") wd: String,
-        @Query("page") page: Int = 1
+        @Query("page") page: Int = 1,
+        @Query("source") source: String? = null
     ): Response<ApiResponse<VodListData>>
 
     @GET("/api/vodlist")

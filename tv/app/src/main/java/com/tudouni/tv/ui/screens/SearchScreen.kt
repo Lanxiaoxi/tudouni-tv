@@ -84,8 +84,12 @@ fun SearchScreen(
     var submitted by remember { mutableStateOf<String?>(null) }
 
     var resultItems by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    // 已加载条数（用于界面计数）。注意：后端 /api/search 的 total 是「本页条数」而不是总数
+    // （search.py: total = len(items)），所以不能拿它当总数用。
     var resultTotal by remember { mutableStateOf(0) }
     var resultPage by remember { mutableIntStateOf(1) }
+    // 服务端已没有更多：返回空页或本页没带来任何新条目时置真，用于终止自动翻页
+    var resultExhausted by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
@@ -154,13 +158,20 @@ fun SearchScreen(
                     
                     if (page == 1) {
                         resultItems = filteredItems
-                        resultTotal = data.total
+                        // 服务端本页就是空的 → 确实没有更多
+                        resultExhausted = data.items.isEmpty()
                     } else {
                         // 分页追加（按序去重 vod_id，避免跨页重复）
                         val existing = resultItems.map { it.vodId to it.sourceCode }
-                        resultItems = resultItems + filteredItems.filter { (it.vodId to it.sourceCode) !in existing }
-                        resultTotal = data.total
+                        val added = filteredItems.filter { (it.vodId to it.sourceCode) !in existing }
+                        resultItems = resultItems + added
+                        // 本页没有带来任何新条目（上游重复 / 全被内容过滤）→ 停止自动翻页，
+                        // 否则滚到底会一直 request 下一页
+                        if (added.isEmpty()) resultExhausted = true
                     }
+                    // 计数只表示「已加载多少」：拿后端的 total 当总数会让分页在第一页就判满
+                    // （resultItems.size == 本页条数 == total → hasMore 立刻为 false，翻页失效）
+                    resultTotal = resultItems.size
                     resultPage = page
                     searchError = null
                 } else {
@@ -190,6 +201,7 @@ fun SearchScreen(
             resultPage = 1
             resultItems = emptyList()
             resultTotal = 0
+            resultExhausted = false
             runSearch(q, 1, seq)
             searching = false
             // 上报搜索历史（fire-and-forget，失败不影响结果）
@@ -218,8 +230,10 @@ fun SearchScreen(
     }
 
     // L2：滚动到结果网格接近末尾 → 自动加载下一页
-    val hasMore = resultItems.size < resultTotal
-    LaunchedEffect(resultGridState, resultItems.size, resultTotal, submitted) {
+    // 「还有没有下一页」由 resultExhausted 决定（服务端返回空页/本页无新条目即终止），
+    // 不能拿 resultItems.size 去比后端的 total——那是本页条数，第一页判完就再也不会翻页。
+    val hasMore = !resultExhausted && resultItems.isNotEmpty()
+    LaunchedEffect(resultGridState, resultItems.size, resultExhausted, submitted) {
         snapshotFlow {
             val info = resultGridState.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -438,7 +452,8 @@ fun SearchScreen(
                     ) {
                         item(key = "result_count", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                             Text(
-                                text = "「${submitted}」 找到 $resultTotal 部",
+                                // 后端 /api/search 不返回总数（total 是本页条数），只报「已加载」
+                                text = "「${submitted}」 已加载 $resultTotal 部",
                                 style = TvType.BodyMedium,
                                 color = TvColors.TextTertiary,
                                 modifier = Modifier.padding(vertical = 4.dp),

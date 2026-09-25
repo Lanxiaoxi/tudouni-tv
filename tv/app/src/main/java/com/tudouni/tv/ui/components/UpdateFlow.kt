@@ -1,6 +1,7 @@
 package com.tudouni.tv.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.tudouni.tv.BuildConfig
@@ -25,6 +31,7 @@ import com.tudouni.tv.data.AppUpdater
 import com.tudouni.tv.data.AppVersionData
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 软件更新流程状态机（2026-08-22 新增）。 */
@@ -173,10 +180,28 @@ fun UpdateFlow(
 /** 检查中/下载中的全屏遮罩（带进度百分比；progress 为 null 时显示不定进度圈）。 */
 @Composable
 private fun UpdateProgressOverlay(text: String, progress: Float?) {
+    val blockerFocus = remember { FocusRequester() }
+    // 遮罩只画在下层内容之上，焦点其实还留在下面的按钮上：不把输入也挡住的话，
+    // 「正在下载更新…」期间方向键/OK 仍能切页、开详情、起播。
+    LaunchedEffect(Unit) {
+        var attempts = 0
+        while (attempts < FOCUS_RETRY_ATTEMPTS) {
+            if (runCatching { blockerFocus.requestFocus() }.isSuccess) break
+            delay(FOCUS_RETRY_MS)
+            attempts++
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(TvColors.Scrim),
+            .background(TvColors.Scrim)
+            .focusRequester(blockerFocus)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                // 方向键/OK 一律吞掉，避免操作到遮罩下面；返回键放行，
+                // 万一网络卡死也不会把用户困在「正在下载」界面上
+                event.key != Key.Back && event.key != Key.Escape
+            },
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -205,3 +230,9 @@ private fun UpdateProgressOverlay(text: String, progress: Float?) {
         }
     }
 }
+
+/** 焦点请求重试间隔（毫秒）。 */
+private const val FOCUS_RETRY_MS = 50L
+
+/** 焦点请求重试次数上限（50ms × 20 ≈ 1s）。 */
+private const val FOCUS_RETRY_ATTEMPTS = 20

@@ -21,8 +21,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -43,6 +45,7 @@ import com.tudouni.tv.ui.navigation.NavPage
 import com.tudouni.tv.ui.theme.TvColors
 import com.tudouni.tv.ui.theme.TvShapes
 import com.tudouni.tv.ui.theme.TvType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -73,13 +76,20 @@ fun TvNavRail(
         Brush.horizontalGradient(listOf(TvColors.AccentStrong, TvColors.Accent))
     }
 
-    // 初始焦点：进入主框架时落在当前页导航项（默认首页）——一次性，
-    // 由外部 onFocusConsumed 置 false，避免从详情/播放页返回时焦点被抢回导航栏
+    // 初始焦点：进入主框架时落在当前页导航项（默认首页）。
+    // 与旧实现的两点区别：
+    // ① 焦点请求会重试，直到导航项**真的**拿到焦点（由 NavItem 的 onFocused 回调确认）；
+    //    旧实现无条件调用 onFocusConsumed，一旦首次请求失败就再没有重试机会，
+    //    首屏会没有任何元素处于焦点态（遥控器第一下按下去毫无反馈）。
+    // ② 只确认真的拿到焦点才消费 initialFocus，避免从详情/播放页返回时焦点被抢回导航栏。
+    var initialFocusDone by remember { mutableStateOf(!initialFocus) }
     LaunchedEffect(Unit) {
-        if (initialFocus) {
-            val idx = pages.indexOf(currentPage).coerceAtLeast(0)
-            focusRequesters[idx].requestFocus()
-            onFocusConsumed()
+        if (!initialFocus) return@LaunchedEffect
+        val idx = pages.indexOf(currentPage).coerceAtLeast(0)
+        repeat(FOCUS_RETRY_ATTEMPTS) {
+            if (initialFocusDone) return@LaunchedEffect
+            runCatching { focusRequesters[idx].requestFocus() }
+            delay(FOCUS_RETRY_MS)
         }
     }
 
@@ -124,6 +134,10 @@ fun TvNavRail(
                 isLast = false,
                 wrapTo = if (i == 0) focusRequesters.last() else null,
                 onClick = { onSelect(pages[i]) },
+                onFocused = {
+                    initialFocusDone = true
+                    onFocusConsumed()
+                },
             )
         }
 
@@ -150,6 +164,10 @@ fun TvNavRail(
                 isLast = i == pages.lastIndex,
                 wrapTo = if (i == pages.lastIndex) focusRequesters.first() else null,
                 onClick = { onSelect(pages[i]) },
+                onFocused = {
+                    initialFocusDone = true
+                    onFocusConsumed()
+                },
             )
         }
     }
@@ -164,9 +182,14 @@ private fun NavItem(
     isLast: Boolean,
     wrapTo: FocusRequester?,
     onClick: () -> Unit,
+    onFocused: () -> Unit = {},
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    // 焦点真的落到本项时通知外层（用于确认「初始焦点请求已成功」，失败则外层继续重试）
+    LaunchedEffect(isFocused) {
+        if (isFocused) onFocused()
+    }
     val scope = rememberCoroutineScope()
     val animatedScale by animateFloatAsState(
         targetValue = if (isFocused) 1.05f else 1f,
@@ -202,12 +225,17 @@ private fun NavItem(
                 }
                 .fillMaxSize()
                 .background(bg, TvShapes.NavItem)
+                // focusRequester 必须在 clickable 之前：Modifier.a().b() 里 a 是 b 的父节点，
+                // 而 FocusRequester.requestFocus() 只**向下**遍历寻找 FocusTarget
+                // （Compose 1.7.5 FocusRequester.kt：node.visitChildren(Nodes.FocusTarget)）。
+                // 写在 clickable 之后就找不到焦点目标——requestFocus 静默返回 false 且不抛异常，
+                // 表现为「初始焦点不生效」+「↑↓ 环绕键被消费但焦点不动」。
+                .focusRequester(focusRequester)
                 .clickable(
                     interactionSource = interactionSource,
                     indication = null,
                     onClick = onClick,
                 )
-                .focusRequester(focusRequester)
                 // 环绕：仅首/末项拦截边界方向键；用协程延迟一帧请求焦点，
                 // 避免与系统焦点移动同帧竞争导致 requestFocus 被覆盖（实测按 ↑ 无反应的原因）
                 .onPreviewKeyEvent { event ->
@@ -280,3 +308,9 @@ private fun NavItem(
         }
     }
 }
+
+/** 焦点请求重试间隔（毫秒）。 */
+private const val FOCUS_RETRY_MS = 50L
+
+/** 焦点请求重试次数上限（50ms × 20 ≈ 1s；正常首次即成功，仅慢设备兜底）。 */
+private const val FOCUS_RETRY_ATTEMPTS = 20

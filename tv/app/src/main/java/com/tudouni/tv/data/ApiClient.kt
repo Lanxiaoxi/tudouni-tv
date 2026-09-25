@@ -75,22 +75,25 @@ object ApiClient {
             val rewrite = Interceptor { chain ->
                 val req = chain.request()
                 val base = serverAddr.toHttpUrlOrNull()
-                val response = if (base != null) {
+                if (base != null) {
                     val newUrl = req.url.newBuilder()
                         .scheme(base.scheme)
                         .host(base.host)
                         .port(base.port)
                         .build()
                     val builder = req.newBuilder().url(newUrl)
-                    token?.let { builder.header("Authorization", "Bearer $it") }
-                    chain.proceed(builder.build())
+                    // 记下「本次请求实际用的凭证」：readTimeout 可达 20s，期间用户可能已重新登录，
+                    // 此时这个迟到的 401 属于旧 token，不能拿它把新会话判为过期（会弹出“登录已过期”）。
+                    val usedToken = token
+                    usedToken?.let { builder.header("Authorization", "Bearer $it") }
+                    val response = chain.proceed(builder.build())
+                    // 统一识别登录态失效（401）：带 token 时说明是过期/被吊销；未带 token
+                    // （如 /api/auth/login 密码错误返 401）不广播，否则登录页会跳回自身。
+                    if (response.code == 401 && hasToken() && usedToken == token) notifyAuthExpired()
+                    response
                 } else {
                     chain.proceed(req)
                 }
-                // 统一识别登录态失效（401）：带 token 时说明是过期/被吊销；未带 token
-                // （如 /api/auth/login 密码错误返 401）不广播，否则登录页会跳回自身。
-                if (response.code == 401 && hasToken()) notifyAuthExpired()
-                response
             }
             val client = OkHttpClient.Builder()
                 .addInterceptor(rewrite)

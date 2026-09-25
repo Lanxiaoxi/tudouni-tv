@@ -203,6 +203,9 @@ fun SettingsScreen(
             onConfirm = {
                 showLogoutConfirm = false
                 scope.launch {
+                    // 先尽力让服务端吊销凭证：后端 token 默认 7 天有效，
+                    // 不吊销等于「本机退出了但凭证还能用」；失败不影响本机退出
+                    runCatching { ApiClient.get().logout() }
                     authStore.logout()
                     ApiClient.configure(null)
                     onLogout()

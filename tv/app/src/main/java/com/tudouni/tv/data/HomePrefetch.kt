@@ -1,5 +1,7 @@
 package com.tudouni.tv.data
 
+import kotlinx.coroutines.CancellationException
+
 /**
  * 首页数据缓存：App 开屏（Screen.Loading）期间预拉 /api/items 首批 500 条，
  * 或 HomeScreen 加载成功后写入；进入/切回首页时读取——TTL 100 分钟内秒开，
@@ -29,6 +31,10 @@ object HomePrefetch {
                 val items = if (filterEnabled) ContentFilter.filterItems(data.items) else data.items
                 put(filterEnabled, items, data.total)
             }
+        } catch (e: CancellationException) {
+            // 开屏预拉设了 3 秒超时（见 App.kt）：取消必须继续上抛，
+            // 否则超时会因为这里吞掉 CancellationException 而失效
+            throw e
         } catch (_: Exception) {
             // 预拉失败不阻塞启动：HomeScreen 会自行加载
         }
