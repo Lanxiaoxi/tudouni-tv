@@ -10,6 +10,14 @@ FRONTEND_DIR = BACKEND_DIR.parent                      # LibreTV/ 前端根目�
 PASSWORD = os.getenv("PASSWORD", "")                       # 必填：登录密码
 TOKEN_TTL_SECONDS = int(os.getenv("TOKEN_TTL_DAYS", "7")) * 86400
 
+# 扫码登录 TV 端（设备码授权，见 docs/tv-qr-login-design.md）
+DEVICE_CODE_TTL_SECONDS = int(os.getenv("DEVICE_CODE_TTL", "300"))            # 设备码有效期（秒），默认 5 分钟
+DEVICE_POLL_INTERVAL_SECONDS = int(os.getenv("DEVICE_POLL_INTERVAL", "3"))    # 建议轮询间隔（秒），TV 端据此 sleep
+DEVICE_CONFIRM_MAX_ATTEMPTS = int(os.getenv("DEVICE_CONFIRM_MAX_ATTEMPTS", "5"))  # 每 IP 每分钟最多确认尝试次数
+# 二维码指向的绝对地址前缀（如 https://tv.lanxi.me）。留空时按请求的 Host 推导；
+# 部署在反代后若 scheme/Host 推导不对（二维码扫出来打不开），显式设置这个变量。
+DEVICE_VERIFY_BASE_URL = os.getenv("DEVICE_VERIFY_BASE_URL", "").rstrip("/")
+
 # 服务
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "9797"))

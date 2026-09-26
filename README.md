@@ -65,6 +65,7 @@ LibreTV/
 | 层 | 内容 | 说明 |
 |----|------|------|
 | SQLite（持久） | 用户 / token / 观看历史 / 搜索历史 | 按用户隔离，服务端为准 |
+| SQLite（设备码） | `device_codes` 扫码登录临时码 | 短 TTL（默认 5 分钟），确认后一次性领取 token，启动时清理过期行 |
 | SQLite（镜像表） | `videos` 资源索引 | 定时轮转同步，首页/分类/搜索本地查库 |
 | SQLite（热播条目） | `hot_rank_items` 热播榜条目并集 | 每次刷新成功并集合并（按 source+vod_id 去重），榜单拉取失败时兜底 |
 | 内存 TTL 缓存 | 搜索 / 详情 / 热播榜结果 | 惰性过期 + LRU，降低对上游请求频率（热播榜 5 天） |
@@ -133,6 +134,10 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 9797
 | `TTL_CACHE_MAX_ITEMS` | `200` | 内存 TTL 缓存条数上限（LRU 淘汰） |
 | `SEARCH_TTL` | `300` | 搜索结果缓存秒数 |
 | `DETAIL_TTL` | `1800` | 详情缓存秒数 |
+| `DEVICE_CODE_TTL` | `300` | 扫码登录设备码有效期（秒） |
+| `DEVICE_POLL_INTERVAL` | `3` | 扫码登录建议轮询间隔（秒），TV 端据此 sleep |
+| `DEVICE_CONFIRM_MAX_ATTEMPTS` | `5` | 扫码确认每 IP 每分钟最多尝试次数（超限返回 429） |
+| `DEVICE_VERIFY_BASE_URL` | 空 | 二维码指向的绝对地址前缀（如 `https://tv.lanxi.me`）。留空时按请求 Host 推导；反代后扫出来打不开就显式设置 |
 
 > 所有变量均有默认值，后端不读 `.env` 文件，通过环境变量传入（systemd `EnvironmentFile` 或命令行内联）。
 
@@ -144,6 +149,10 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 9797
 | `POST` | `/api/auth/register` | 注册新用户（自动登录） |
 | `POST` | `/api/auth/login` | 登录，返回 token |
 | `POST` | `/api/auth/logout` | 登出（token 失效） |
+| `POST` | `/api/auth/device/start` | 扫码登录：TV 端申请设备码（**无需鉴权**），返回 `device_code` / `user_code` / `verify_url` |
+| `POST` | `/api/auth/device/poll` | 扫码登录：TV 端轮询（**无需鉴权**，凭 `device_code`），统一返回 `status`，`confirmed` 时一次性给出 token |
+| `POST` | `/api/auth/device/confirm` | 扫码登录：手机端确认授权（需手机自己的 token，body 传 `user_code`） |
+| `POST` | `/api/auth/device/deny` | 扫码登录：手机端拒绝授权（需 token，body 传 `user_code`） |
 | `GET` | `/api/me` | 当前用户信息 + 设置 |
 | `PUT` | `/api/me/settings` | 保存用户设置（源勾选 / 偏好） |
 | `GET/PUT/DELETE` | `/api/history` | 观看历史读写 / 清空 |
@@ -160,7 +169,8 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 9797
 | `GET` | `/api/proxy` | 通用代理（封面图等，`url` 参数） |
 | `GET` | `/api/detail` | 视频详情 + 播放地址（`id` / `source`） |
 
-除 `/api/health` 外，所有接口需携带 `Authorization: Bearer <token>` 请求头。
+除 `/api/health`、`/api/app/*`（软件更新）、`/api/auth/device/start`、`/api/auth/device/poll`
+外，所有接口需携带 `Authorization: Bearer <token>` 请求头。
 
 ## 数据源
 

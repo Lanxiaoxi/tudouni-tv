@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, detail, home, hotrank, proxy, search, sync, update, userdata, vodlist
+from . import auth, db, detail, device, home, hotrank, proxy, search, sync, update, userdata, vodlist
 from .iqiyi import iqiyi
 from .tencent import tencent
 from .youku import youku
@@ -145,6 +145,36 @@ async def api_logout(authorization: str | None = Header(default=None)):
     if token:
         await auth.logout(token)
     return {"code": 0, "data": {"ok": True}, "message": "ok"}
+
+
+# ---------- 扫码登录 TV 端（设备码授权） ----------
+
+@app.post("/api/auth/device/start")
+async def api_device_start(request: Request):
+    """TV 端申请设备码（无需鉴权）。返回 device_code/user_code/verify_url。"""
+    data = await device.start(request)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.post("/api/auth/device/poll")
+async def api_device_poll(body: dict):
+    """TV 端轮询领取 token（无需鉴权，凭 device_code）。统一 200 + status 字段。"""
+    data = await device.poll((body or {}).get("device_code"))
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.post("/api/auth/device/confirm")
+async def api_device_confirm(body: dict, request: Request, user_id: int = Depends(auth.require_token)):
+    """手机端确认授权（需手机自己的登录态）。"""
+    data = await device.confirm((body or {}).get("user_code"), request, user_id)
+    return {"code": 0, "data": data, "message": "ok"}
+
+
+@app.post("/api/auth/device/deny")
+async def api_device_deny(body: dict, request: Request, user_id: int = Depends(auth.require_token)):
+    """手机端拒绝授权（需手机自己的登录态）。"""
+    data = await device.deny((body or {}).get("user_code"), request, user_id)
+    return {"code": 0, "data": data, "message": "ok"}
 
 
 # ---------- 用户数据（按 user_id 隔离） ----------

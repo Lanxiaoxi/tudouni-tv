@@ -25,6 +25,23 @@ interface TudouniApi {
     @POST("/api/auth/logout")
     suspend fun logout(): Response<ApiResponse<Map<String, Any>>>
 
+    // ---------- 扫码登录 TV 端（设备码授权，无需鉴权） ----------
+
+    /**
+     * 申请设备码：返回 device_code（本机轮询用）/ user_code（屏幕显示、手机核对）/ verify_url（二维码内容）。
+     * user_code 的位数由后端决定，客户端不要自行校验格式。
+     */
+    @POST("/api/auth/device/start")
+    suspend fun deviceStart(): Response<ApiResponse<DeviceStartData>>
+
+    /**
+     * 轮询领取 token。**统一返回 200**，靠 data.status 区分：
+     * pending / confirmed / consumed / denied / expired —— 因此不能用 HTTP 状态码判断成功，
+     * 也不能对非 confirmed 的结果调用 [errorMessage]。
+     */
+    @POST("/api/auth/device/poll")
+    suspend fun devicePoll(@Body body: Map<String, String>): Response<ApiResponse<DevicePollData>>
+
     // ---------- 内容浏览 ----------
 
     @GET("/api/items")

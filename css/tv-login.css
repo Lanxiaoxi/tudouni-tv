@@ -1,0 +1,107 @@
+/* ============================================================
+   扫码登录 TV 端 · 手机确认页
+   复用 css/design.css 的设计系统变量（--accent / --bg-surface / .form-input / .act-btn）
+   ============================================================ */
+
+.tv-body{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px 18px;
+}
+
+.tv-wrap{
+  width:100%;
+  max-width:420px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:22px;
+}
+
+/* ---------- 品牌 ---------- */
+.tv-brand{display:flex;align-items:center;gap:10px}
+.tv-brand-mark{
+  width:38px;height:38px;border-radius:11px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-strong));
+  color:var(--accent-ink);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 6px 18px rgba(255,176,32,.28);
+}
+.tv-brand-mark svg{width:22px;height:22px}
+.tv-brand-name{font-family:var(--font-display);font-size:21px;font-weight:800;letter-spacing:.2px}
+.tv-brand-name em{font-style:normal;color:var(--accent)}
+
+/* ---------- 卡片 ---------- */
+.tv-card{
+  width:100%;
+  background:var(--bg-surface);
+  border:1px solid var(--line-strong);
+  border-radius:20px;
+  box-shadow:var(--shadow-2);
+  padding:28px 24px;
+}
+.tv-title{font-size:20px;font-weight:800;line-height:1.4;margin-bottom:10px}
+.tv-desc{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:18px}
+.tv-desc strong{color:var(--text-1)}
+
+/* ---------- 表单 ---------- */
+.tv-form{display:flex;flex-direction:column}
+.tv-btn{height:46px;justify-content:center;width:100%;font-size:15px;margin-top:14px}
+.tv-code-input{
+  text-transform:uppercase;
+  letter-spacing:3px;
+  font-family:var(--font-display);
+  font-weight:700;
+  text-align:center;
+  font-size:17px;
+}
+
+/* ---------- 确认码展示 ---------- */
+.tv-code-box{
+  background:var(--bg-elevated);
+  border:1px dashed var(--line-strong);
+  border-radius:14px;
+  padding:18px 12px;
+  text-align:center;
+  margin-bottom:14px;
+}
+.tv-code{
+  font-family:var(--font-display);
+  font-size:26px;
+  font-weight:800;
+  letter-spacing:6px;
+  color:var(--accent);
+  word-break:break-all;
+}
+.tv-code-echo{font-family:var(--font-display);letter-spacing:2px;color:var(--accent)}
+.tv-account{font-size:13.5px;color:var(--text-2);margin-bottom:4px}
+.tv-account strong{color:var(--text-1)}
+
+/* ---------- 按钮组 ---------- */
+.tv-actions{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.tv-actions .tv-btn{margin-top:0}
+.tv-actions .act-btn{height:46px;justify-content:center;font-size:15px;width:100%}
+
+/* ---------- 完成态 ---------- */
+.tv-done-icon{
+  width:56px;height:56px;border-radius:50%;
+  background:rgba(52,211,153,.14);
+  color:var(--success);
+  font-size:28px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:16px;
+}
+.tv-done-icon.is-error{background:rgba(255,95,109,.14);color:var(--danger)}
+
+/* ---------- 错误 ---------- */
+.tv-error{margin-top:14px;text-align:center}
+
+.tv-foot{font-size:12.5px;color:var(--text-3);text-align:center;line-height:1.6}
+
+/* ---------- 小屏微调 ---------- */
+@media (max-width:400px){
+  .tv-card{padding:22px 18px}
+  .tv-code{font-size:22px;letter-spacing:4px}
+}

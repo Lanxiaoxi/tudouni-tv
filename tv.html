@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>扫码登录 TV 端 - TudouniTV</title>
+    <meta name="description" content="在手机上确认，即可登录电视端 TudouniTV。">
+
+    <link rel="icon" href="image/logo.png">
+    <link rel="apple-touch-icon" href="image/logo-black.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="css/design.css?v=9">
+    <link rel="stylesheet" href="css/tv-login.css?v=1">
+
+    <!--
+      注意：本页**不加载** js/core/password.js。
+      它的 DOMContentLoaded 会调 initPasswordProtection()，未登录时无条件弹出登录弹窗，
+      会把本页的授权界面顶掉。本页的登录表单由 tv-login.js 自行渲染。
+      加载顺序也不能变：proxy-auth.js 必须先于 api.js 与 tv-login.js，
+      否则 window.ProxyAuth / window.Api 不存在。
+    -->
+    <script src="js/core/proxy-auth.js?v=3"></script>
+    <script src="js/core/api.js?v=3"></script>
+    <script src="js/pages/tv-login.js?v=1" defer></script>
+</head>
+<body class="page-bg tv-body">
+
+    <main class="tv-wrap">
+        <div class="tv-brand">
+            <div class="tv-brand-mark">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm3-8.5-4.5-2.6a.8.8 0 0 0-1.2.7v5.8a.8.8 0 0 0 1.2.7l4.5-2.6a.8.8 0 0 0 0-1.4z"/></svg>
+            </div>
+            <div class="tv-brand-name">Tudouni<em>TV</em></div>
+        </div>
+
+        <div class="tv-card">
+            <!-- ========== 状态：缺少确认码 ========== -->
+            <section id="stateNoCode" class="hidden">
+                <h1 class="tv-title">登录电视端</h1>
+                <p class="tv-desc">请扫描电视上显示的二维码，或在下方输入电视上显示的 8 位确认码。</p>
+                <form id="codeForm" class="tv-form">
+                    <input
+                        type="text"
+                        id="codeInput"
+                        class="form-input tv-code-input"
+                        placeholder="8 位确认码"
+                        inputmode="latin"
+                        autocomplete="off"
+                        autocapitalize="characters"
+                        spellcheck="false"
+                        maxlength="12"
+                        aria-label="确认码">
+                    <button type="submit" class="act-btn primary tv-btn">继续</button>
+                </form>
+            </section>
+
+            <!-- ========== 状态：未登录（先登录手机端） ========== -->
+            <section id="stateLogin" class="hidden">
+                <h1 class="tv-title">请先登录</h1>
+                <p class="tv-desc">
+                    确认码 <strong class="tv-code-echo" id="loginCodeEcho"></strong> 需要在登录后确认。
+                    登录后即完成电视端授权。
+                </p>
+                <form id="loginForm" class="tv-form">
+                    <input
+                        type="text"
+                        id="usernameInput"
+                        class="form-input"
+                        placeholder="用户名"
+                        autocomplete="username"
+                        aria-label="用户名"
+                        style="margin-bottom:10px">
+                    <input
+                        type="password"
+                        id="passwordInput"
+                        class="form-input"
+                        placeholder="密码"
+                        autocomplete="current-password"
+                        aria-label="密码">
+                    <button type="submit" class="act-btn primary tv-btn" id="loginBtn">登录并授权</button>
+                </form>
+            </section>
+
+            <!-- ========== 状态：已登录，等待确认 ========== -->
+            <section id="stateConfirm" class="hidden">
+                <h1 class="tv-title">确认在电视上登录？</h1>
+                <p class="tv-desc">请核对下面的确认码与电视屏幕上显示的是否一致。</p>
+                <div class="tv-code-box">
+                    <span class="tv-code" id="codeEcho"></span>
+                </div>
+                <p class="tv-account">将以 <strong id="accountName">当前账号</strong> 的身份登录电视端</p>
+                <div class="tv-actions">
+                    <button class="act-btn primary tv-btn" id="confirmBtn">确认登录</button>
+                    <button class="act-btn tv-btn" id="denyBtn">不是我操作的</button>
+                </div>
+            </section>
+
+            <!-- ========== 状态：已完成 ========== -->
+            <section id="stateDone" class="hidden">
+                <div class="tv-done-icon" id="doneIcon">✓</div>
+                <h1 class="tv-title" id="doneTitle">授权成功</h1>
+                <p class="tv-desc" id="doneDesc">电视端已登录，可以开始观看了。</p>
+                <div class="tv-actions" id="doneActions"></div>
+            </section>
+
+            <p id="tvError" class="form-error tv-error hidden"></p>
+        </div>
+
+        <p class="tv-foot">登录凭证仅用于同步观看记录，不会分享给第三方。</p>
+    </main>
+
+</body>
+</html>

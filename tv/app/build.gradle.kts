@@ -88,4 +88,10 @@ dependencies {
 
     // ---- 持久化：DataStore（服务器地址 / token / 用户名）----
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // ---- 二维码：扫码登录 TV 端时在电视上显示二维码 ----
+    // 只用 core（纯 Java，无运行时依赖、无 Android API 依赖，minSdk 21 可用）生成二维码位图。
+    // 不要引 zxing-android-embedded / CameraX：那是给「用手机摄像头扫」准备的，
+    // 电视盒子普遍无摄像头，还会平白引入相机权限。
+    implementation("com.google.zxing:core:3.5.3")
 }

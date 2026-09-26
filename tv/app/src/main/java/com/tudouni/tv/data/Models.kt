@@ -87,6 +87,50 @@ data class LoginResult(
     val username: String
 )
 
+// ---------- 扫码登录 TV 端（设备码授权，见 docs/tv-qr-login-design.md） ----------
+
+/** POST /api/auth/device/start → data */
+data class DeviceStartData(
+    /** 本机轮询凭据，不上屏、不进二维码。 */
+    @SerializedName("device_code") val deviceCode: String,
+    /** 人读确认码：显示在电视上，供用户与手机核对。 */
+    @SerializedName("user_code") val userCode: String,
+    /** 二维码内容（后端按部署域名拼好的确认页绝对地址）。 */
+    @SerializedName("verify_url") val verifyUrl: String,
+    @SerializedName("expires_in") val expiresIn: Long,
+    /** 后端建议的轮询间隔（秒）。 */
+    val interval: Long
+)
+
+/**
+ * POST /api/auth/device/poll → data。
+ *
+ * 接口**统一返回 HTTP 200**，成功/等待/失败都靠 [status] 区分，故其他字段全部可空：
+ * - `pending`：还在等手机确认，可能带 interval / expires_in
+ * - `confirmed`：带 token / username / user_id / expires_in（本次会话已一次性领走）
+ * - `consumed`：已被领走过（重复轮询）
+ * - `denied`：用户在手机上拒绝了
+ * - `expired`：设备码不存在或已过期
+ */
+data class DevicePollData(
+    // 声明为可空：Gson 绕过构造器默认值，字段缺失时会写入 null；
+    // 若声明为非空 String，null 会在 when 比对处留下隐患（后端新增字段/异常响应时）
+    val status: String? = null,
+    val token: String? = null,
+    @SerializedName("expires_in") val expiresIn: Long? = null,
+    @SerializedName("user_id") val userId: Long? = null,
+    val username: String? = null,
+    val interval: Long? = null
+) {
+    companion object {
+        const val STATUS_PENDING = "pending"
+        const val STATUS_CONFIRMED = "confirmed"
+        const val STATUS_CONSUMED = "consumed"
+        const val STATUS_DENIED = "denied"
+        const val STATUS_EXPIRED = "expired"
+    }
+}
+
 /** GET /api/items?offset=&limit= → data（分批加载） */
 data class ItemsData(
     val items: List<VideoItem>,

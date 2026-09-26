@@ -114,6 +114,17 @@ def init_db() -> None:
                 UNIQUE(platform, source, vod_id)
             );
             CREATE INDEX IF NOT EXISTS idx_hotrank_platform ON hot_rank_items(platform, last_seen);
+
+            CREATE TABLE IF NOT EXISTS device_codes (
+                device_code TEXT PRIMARY KEY,
+                user_code   TEXT UNIQUE NOT NULL,
+                status      TEXT NOT NULL DEFAULT 'pending',
+                user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                attempts    INTEGER NOT NULL DEFAULT 0,
+                created_at  INTEGER NOT NULL,
+                expires_at  INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_device_codes_expires ON device_codes(expires_at);
             """
         )
         conn.commit()
@@ -134,6 +145,9 @@ def init_db() -> None:
         # 存量库迁移：热播兜底从「快照表 hot_rank_history」升级为「条目并集表 hot_rank_items」，
         # 清理废弃旧表（幂等；新库无此表则跳过）
         conn.execute("DROP TABLE IF EXISTS hot_rank_history")
+        conn.commit()
+        # 扫码登录：清理上次进程退出时残留的过期/已用设备码（幂等，纯卫生）
+        conn.execute("DELETE FROM device_codes WHERE expires_at < ?", (int(time.time()),))
         conn.commit()
     finally:
         conn.close()
@@ -227,6 +241,135 @@ def revoke_token(token: str) -> None:
     try:
         conn.execute("DELETE FROM tokens WHERE token = ?", (token,))
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------- 扫码登录设备码（device_codes） ----------
+
+# 人读码字符集：去掉 0/O/1/I/L 等易混字符，31 个字符 → 8 位约 8.5e11 组合
+DEVICE_USER_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+DEVICE_USER_CODE_LEN = 8
+
+
+def _gen_user_code() -> str:
+    return "".join(secrets.choice(DEVICE_USER_CODE_ALPHABET) for _ in range(DEVICE_USER_CODE_LEN))
+
+
+def create_device_code(ttl_seconds: int, max_retry: int = 8) -> dict:
+    """新建一个设备码。人读码撞唯一约束时重试（碰撞概率极低）。
+
+    返回 {device_code, user_code, expires_at}；重试用尽抛 RuntimeError。
+    """
+    conn = get_conn()
+    now = int(time.time())
+    try:
+        for _ in range(max_retry):
+            device_code = secrets.token_hex(32)
+            user_code = _gen_user_code()
+            try:
+                conn.execute(
+                    "INSERT INTO device_codes (device_code, user_code, status, created_at, expires_at) "
+                    "VALUES (?,?,?,?,?)",
+                    (device_code, user_code, "pending", now, now + ttl_seconds),
+                )
+                conn.commit()
+                return {"device_code": device_code, "user_code": user_code, "expires_at": now + ttl_seconds}
+            except sqlite3.IntegrityError:
+                continue  # 人读码冲突（32^8 空间，实际几乎不会发生）
+        raise RuntimeError("生成设备码失败：人读码重复次数过多")
+    finally:
+        conn.close()
+
+
+def get_device_code(device_code: str) -> dict | None:
+    """按 device_code 查一行（不校验状态）。"""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM device_codes WHERE device_code = ?", (device_code,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def confirm_device_code(user_code: str, user_id: int) -> tuple[str, dict | None]:
+    """手机端确认授权：把人读码对应的行置 confirmed 并绑定 user_id。
+
+    返回 (result, row)：result ∈ ok / not_found / expired / used。
+
+    注意人读码的爆破防护**不**在这一层：猜错的码在库里根本不存在（直接返回 not_found），
+    行上无从计数、也没有行可以置 denied。真正的限流按调用方 IP 做，见 device.confirm。
+    attempts 列记录该码被确认的次数，仅供排查用。
+    """
+    conn = get_conn()
+    now = int(time.time())
+    try:
+        row = conn.execute(
+            "SELECT * FROM device_codes WHERE user_code = ?", (user_code,)
+        ).fetchone()
+        if row is None:
+            return "not_found", None
+        if now > row["expires_at"]:
+            return "expired", dict(row)
+        if row["status"] != "pending":
+            return "used", dict(row)
+
+        conn.execute(
+            "UPDATE device_codes SET status = 'confirmed', user_id = ?, attempts = ? WHERE device_code = ?",
+            (user_id, int(row["attempts"]) + 1, row["device_code"]),
+        )
+        conn.commit()
+        return "ok", dict(row)
+    finally:
+        conn.close()
+
+
+def consume_device_code(device_code: str) -> dict | None:
+    """TV 轮询领到 token 时调用：把 confirmed 行置 consumed（一次性）。
+
+    返回被消费的行；行不存在/状态不是 confirmed 时返回 None（调用方据此不发 token）。
+    用 UPDATE ... WHERE status='confirmed' 的原子写法防止并发重复领取。
+    """
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE device_codes SET status = 'consumed' WHERE device_code = ? AND status = 'confirmed'",
+            (device_code,),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute(
+            "SELECT * FROM device_codes WHERE device_code = ?", (device_code,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def deny_device_code(user_code: str) -> bool:
+    """手机端主动拒绝授权（仅对 pending 生效）。"""
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE device_codes SET status = 'denied' WHERE user_code = ? AND status = 'pending'",
+            (user_code,),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def cleanup_device_codes() -> int:
+    """清理过期设备码，返回删除条数。"""
+    conn = get_conn()
+    try:
+        cur = conn.execute("DELETE FROM device_codes WHERE expires_at < ?", (int(time.time()),))
+        conn.commit()
+        return cur.rowcount
     finally:
         conn.close()
 
